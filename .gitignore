@@ -39,3 +39,22 @@
 
 # debug information files
 *.dwo
+
+# Mac OS
+*.DS_STORE
+
+# Cmake generated files
+build/
+CMakeCache.txt
+CMakeFiles/
+# Comment the following line out if you use an in-source build directory named "build" for other things.
+# If you follow PitchFork Layout, the "build/" folder is standard.
+
+# Other common generated files
+Makefile
+cmake_install.cmake
+install_manifest.txt
+compile_commands.json
+CTestTestfile.cmake
+_deps
+CMakeUserPresets.json
