@@ -1,5 +1,4 @@
-#include "boir/boir.h"
-#include <fstream>
+#include "boil/boil.h"
 #include <iostream>
 #include <onnx/onnx_pb.h>
 #include <onnxruntime/onnxruntime_cxx_api.h>
@@ -33,18 +32,12 @@ onnx::ModelProto create_simple_model() {
   return model;
 }
 
-void save_model(const onnx::ModelProto &model, const std::string &path) {
-  std::ofstream out(path, std::ios::binary);
-  model.SerializeToOstream(&out);
-}
-
 int main() {
-  onnx::ModelProto model = create_simple_model();
-  std::string serialized_model;
-  model.SerializeToString(&serialized_model);
+  Boil boil;
+  std::string model = boil.serialize(create_simple_model());
 
   Ort::Env env;
-  Ort::Session session(env, serialized_model.data(), serialized_model.size(),
+  Ort::Session session(env, model.data(), model.size(),
                        Ort::SessionOptions{nullptr});
 
   std::vector<float> input_data{-0.5, 0.1, -2,
