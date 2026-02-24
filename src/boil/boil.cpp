@@ -8,8 +8,8 @@ Boil::Boil(const onnx::ModelProto onnx_protobuf,
            const std::vector<char *> input_names,
            const std::vector<char *> output_names)
     : onnx_model(serialize(onnx_protobuf)), input_data(input_data),
-      input_names(input_names), output_names(output_names),
-      input_shape(input_shape), env(),
+      input_shape(input_shape), input_names(input_names),
+      output_names(output_names), env(),
       memory_info(
           Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault)),
       session(Ort::Session(env, onnx_model.data(), onnx_model.size(),
