@@ -3,6 +3,21 @@
 #include <onnx/onnx_pb.h>
 #include <onnxruntime/onnxruntime_cxx_api.h>
 
+template <typename T>
+void print_matrix(const std::vector<std::vector<T>> &matrix) {
+  std::cout << "[" << std::endl;
+  for (const auto &row : matrix) {
+    std::cout << "  [";
+    for (size_t i = 0; i < row.size(); i++) {
+      std::cout << row[i];
+      if (i < row.size() - 1)
+        std::cout << ", ";
+    }
+    std::cout << "]" << std::endl;
+  }
+  std::cout << "]" << std::endl;
+}
+
 onnx::ModelProto create_simple_model() {
   onnx::ModelProto model;
   auto opset = model.add_opset_import();
@@ -33,37 +48,26 @@ onnx::ModelProto create_simple_model() {
 }
 
 int main() {
-  Boil boil;
-  std::string model = boil.serialize(create_simple_model());
-
-  Ort::Env env;
-  Ort::Session session(env, model.data(), model.size(),
-                       Ort::SessionOptions{nullptr});
-
-  std::vector<float> input_data{-0.5, 0.1, -2,
-                                3.5}; // Should give { 0.0, 0.1, 0.0, 3.5 }
+  std::vector<float> input_data{-0.5, 0.1, -2, 3.5};
   std::vector<int64_t> input_shape{4};
-
-  auto memory_info =
-      Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
-
-  Ort::Value input_tensor = Ort::Value::CreateTensor(
-      memory_info, input_data.data(), input_data.size(), input_shape.data(),
-      input_shape.size());
-
-  const char *input_names[]{"X"};
-  const char *output_names[]{"Y"};
+  Boil boil(create_simple_model(), input_data, input_shape, {"X"}, {"Y"});
 
   Ort::RunOptions run_options{nullptr};
-  auto output =
-      session.Run(run_options, input_names, &input_tensor, 1, output_names, 1);
+  auto output = boil.run_model(run_options);
+  auto info = output[0].GetTensorTypeAndShapeInfo();
+  auto shape = info.GetShape();
+  std::cout << "Output Shape: " << *shape.data() << std::endl;
+  float *data = output[0].GetTensorMutableData<float>();
+  int64_t size = *input_shape.data();
 
-  float *output_data = output[0].GetTensorMutableData<float>();
+  std::vector<std::vector<float>> matrix(shape[0],
+                                         std::vector<float>(shape[1]));
 
-  for (size_t i = 0; i < input_data.size(); ++i) {
-    std::cout << "Input: " << input_data[i] << " -> Output: " << output_data[i]
-              << std::endl;
+  std::cout << "[";
+  for (int64_t i = 0; i < size; i++) {
+    std::cout << data[i] << (i < size - 1 ? ", " : "");
   }
+  std::cout << "]" << std::endl;
 
   return 0;
 }
