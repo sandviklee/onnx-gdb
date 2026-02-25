@@ -58,11 +58,15 @@ target_include_directories(boil PUBLIC
 )
 target_link_libraries(boil PUBLIC onnx)
 
+add_library(boilui src/ui/toolbar.cpp src/ui/graph.cpp)
+target_include_directories(boilui PUBLIC include)
+target_link_libraries(boilui PUBLIC raylib)
+
 add_executable(${PROJECT_NAME} src/main.cpp)
 target_link_directories(${PROJECT_NAME} PRIVATE
   "${ONNXRUNTIME_ROOTDIR}/lib"
 )
-target_link_libraries(${PROJECT_NAME} PRIVATE onnxruntime boil raylib)
+target_link_libraries(${PROJECT_NAME} PRIVATE onnxruntime boil boilui)
 
 if(APPLE)
   set(CMAKE_OSX_DEPLOYMENT_TARGET "16.0" CACHE STRING "" FORCE)
