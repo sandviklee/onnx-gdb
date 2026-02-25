@@ -1,4 +1,4 @@
-# blockly-onnx
+# ROIL (Raylib ONNX Intermediate Layer)
 
 ML (Machine Learning) has a high barrier to entry, not just because the
 topic is complex, but because you end up navigating a mess of different
@@ -8,10 +8,9 @@ even though the underlying ML concepts are often intuitive once
 visualized. GUIs (Graphical User Interfaces) have been used for more
 approachable ML model creation, but these are often dependent on other
 feature complete ML frameworks such as Tensorflow. This coupling
-makes it harder to focus on increasing efficiency, which is why in this
-thesis, we look into the problem of extending the field of GUI based ML by
+makes it harder to focus on increasing efficiency, which is why with ROIL, we look into the problem of extending the field of GUI based ML by
 creating an efficient GUI based ML compiler, built with the ONNX (Open
-Neural Network Exchange) instruction set. We will investigate
+Neural Network Exchange) instruction set and model. We investigate
 optimizations for improving interface accessibility (model creation) and
 enhancing compilation performance through the usage of tools like ONNX-
 MLIR. We validate our approach against a test suite of ML models,
@@ -21,10 +20,11 @@ evaluating both correctness and runtime performance.
 
 To run this project, you will need to have the following installed:
 
-- CMAKE 3.13 or higher
+- CMAKE 3.15 or higher
 - Clang or GCC
-- ONNX SDK (Comes with the CMAKE)
-- ONNX Runtime
+- ONNX SDK
+- ONNX Runtime SDK
+- Raylib SDK
 
 ### Installation
 
@@ -67,9 +67,9 @@ FetchContent_MakeAvailable(onnxruntime)
 
 Be sure to remove the already existing import.
 
-#### ONNX SDK
+#### ONNX & Raylib SDK
 
-The ONNX SDK is set to be installed with CMake_Lists, this is because it includes all the dependencies needed.
+The ONNX & Raylib SDK is set to be installed with CMake_Lists, this is because it includes all the dependencies needed.
 Less hassle...
 
 ### Build and Run
