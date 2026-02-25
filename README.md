@@ -1,4 +1,4 @@
-# ROIL (Raylib ONNX Intermediate Layer)
+# ROIL (Raylib ONNX Intermediate Language)
 
 ML (Machine Learning) has a high barrier to entry, not just because the
 topic is complex, but because you end up navigating a mess of different
