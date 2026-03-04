@@ -1,4 +1,4 @@
-# ROIL (Raylib ONNX Intermediate Language)
+# ROMLL (Raylib ONNX Machine Learning Language)
 
 ML (Machine Learning) has a high barrier to entry, not just because the
 topic is complex, but because you end up navigating a mess of different
@@ -8,7 +8,7 @@ even though the underlying ML concepts are often intuitive once
 visualized. GUIs (Graphical User Interfaces) have been used for more
 approachable ML model creation, but these are often dependent on other
 feature complete ML frameworks such as Tensorflow. This coupling
-makes it harder to focus on increasing efficiency, which is why with ROIL, we look into the problem of extending the field of GUI based ML by
+makes it harder to focus on increasing efficiency, which is why with ROMLL, we look into the problem of extending the field of GUI based ML by
 creating an efficient GUI based ML compiler, built with the ONNX (Open
 Neural Network Exchange) instruction set and model. We investigate
 optimizations for improving interface accessibility (model creation) and
