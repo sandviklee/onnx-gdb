@@ -47,6 +47,8 @@
 build/
 CMakeCache.txt
 CMakeFiles/
+
+.cache
 # Comment the following line out if you use an in-source build directory named "build" for other things.
 # If you follow PitchFork Layout, the "build/" folder is standard.
 
