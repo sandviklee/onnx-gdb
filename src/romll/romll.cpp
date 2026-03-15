@@ -2,17 +2,19 @@
 #include <iostream>
 #include <romll/romll.h>
 
-ROMLL::ROMLL(Graph &graph, const std::vector<float> input_data,
-             const std::vector<int64_t> input_shape,
-             const std::vector<char *> &input_names,
-             const std::vector<char *> &output_names)
-    : onnx_model(serialize(parse_ui_graph(graph))), input_data(input_data),
-      input_shape(input_shape), input_names(input_names),
-      output_names(output_names), env(),
+ROMLL::ROMLL(Graph &graph)
+    : onnx_model(serialize(parse_ui_graph(graph))), env(),
       memory_info(
           Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault)),
       session(Ort::Session(env, onnx_model.data(), onnx_model.size(),
-                           Ort::SessionOptions{nullptr})) {};
+                           Ort::SessionOptions{nullptr})),
+      graph(graph) {
+  input_data = graph.root->values;
+  input_shape = {(int64_t)input_data.size()};
+
+  input_names = {const_cast<char *>(graph.root->label.c_str())};
+  output_names = {const_cast<char *>(graph.leaf->label.c_str())};
+};
 
 onnx::ModelProto initialize_onnx_model() {
   onnx::ModelProto model;
@@ -71,6 +73,33 @@ onnx::ModelProto ROMLL::parse_ui_graph(const Graph &graph) {
 
   return model;
 }
+
+void ROMLL::run_inference() {
+  // TODO: Should return error code and show error in GUI.
+  try {
+    Ort::RunOptions run_options{nullptr};
+    std::vector<Ort::Value> output = run_model(run_options);
+    Ort::TensorTypeAndShapeInfo info = output[0].GetTensorTypeAndShapeInfo();
+    std::vector<int64_t> shape = info.GetShape();
+    float *data = output[0].GetTensorMutableData<float>();
+    int64_t size = input_shape[0];
+
+    graph.root->values.resize(size);
+    for (int64_t i = 0; i < size; i++) {
+      graph.leaf->values[i] = data[i];
+    }
+    graph.leaf->has_results = true;
+    graph.inference_ran = true;
+
+    std::cout << "Inference output: [";
+    for (int64_t i = 0; i < size; i++) {
+      std::cout << data[i] << (i < size - 1 ? ", " : "");
+    }
+    std::cout << "]" << std::endl;
+  } catch (const Ort::Exception &e) {
+    std::cerr << "ONNX Runtime error: " << e.what() << std::endl;
+  }
+};
 
 std::string ROMLL::serialize(const onnx::ModelProto &model) {
   std::string serialized_model;

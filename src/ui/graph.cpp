@@ -3,7 +3,6 @@
 #include <cstdio>
 #include <cstring>
 #include <deque>
-#include <iostream>
 #include <memory>
 #include <unordered_set>
 
@@ -21,11 +20,11 @@ Block::Block(const BlockType &type, const Vector2 &position, const int shape)
   switch (this->type) {
     // TODO: In case we wan't to have special behaviour
   case BlockType::PORT_INPUT: {
-    this->label = "X";
+    this->label = "INPUT";
     break;
   }
   case BlockType::PORT_OUTPUT: {
-    this->label = "Y";
+    this->label = "OUTPUT";
     break;
   }
   case BlockType::RELU: {

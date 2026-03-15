@@ -19,14 +19,15 @@ private:
 
   std::string serialize(const onnx::ModelProto &onnx_protobuf);
   onnx::ModelProto parse_ui_graph(const Graph &graph);
+  std::vector<Ort::Value> run_model(const Ort::RunOptions &options);
 
 public:
-  ROMLL(Graph &graph, const std::vector<float> input_data,
-        const std::vector<int64_t> input_shape,
-        const std::vector<char *> &input_names,
-        const std::vector<char *> &output_names);
+  ROMLL(Graph &graph);
+
+  Graph &graph;
+
   void save_model(const onnx::ModelProto &model, const std::string &path);
-  std::vector<Ort::Value> run_model(const Ort::RunOptions &options);
+  void run_inference();
 };
 
 #endif

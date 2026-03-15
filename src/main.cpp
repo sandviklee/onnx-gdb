@@ -6,44 +6,6 @@
 #include "ui/graph.h"
 #include <onnxruntime/onnxruntime_cxx_api.h>
 
-void run_inference_with_romll(Graph &graph) {
-  if (!graph.ready())
-    return;
-  // TODO: Should return error code and show error in GUI.
-
-  std::vector<float> input_data = graph.root->values;
-  std::vector<int64_t> input_shape = {(int64_t)input_data.size()};
-
-  try {
-    char *input_name = const_cast<char *>(graph.root->label.c_str());
-    char *output_name = const_cast<char *>(graph.leaf->label.c_str());
-    // char output_name[] = "Y";
-    ROMLL romll(graph, input_data, input_shape, {input_name}, {output_name});
-
-    Ort::RunOptions run_options{nullptr};
-    std::vector<Ort::Value> output = romll.run_model(run_options);
-    Ort::TensorTypeAndShapeInfo info = output[0].GetTensorTypeAndShapeInfo();
-    std::vector<int64_t> shape = info.GetShape();
-    float *data = output[0].GetTensorMutableData<float>();
-    int64_t size = input_shape[0];
-
-    graph.root->values.resize(size);
-    for (int64_t i = 0; i < size; i++) {
-      graph.leaf->values[i] = data[i];
-    }
-    graph.leaf->has_results = true;
-    graph.inference_ran = true;
-
-    std::cout << "Inference output: [";
-    for (int64_t i = 0; i < size; i++) {
-      std::cout << data[i] << (i < size - 1 ? ", " : "");
-    }
-    std::cout << "]" << std::endl;
-  } catch (const Ort::Exception &e) {
-    std::cerr << "ONNX Runtime error: " << e.what() << std::endl;
-  }
-}
-
 int main() {
   struct raylib_config config = {
       .window_height = 800,
@@ -57,6 +19,7 @@ int main() {
   camera.zoom = 1.0f;
 
   Graph graph = Graph(4);
+  ROMLL romll = ROMLL(graph);
 
   while (!WindowShouldClose()) {
     bool inference_pressed = graph.update(camera);
@@ -65,7 +28,6 @@ int main() {
       if (graph.input_state->active_block != nullptr) {
         reset_input_state(*graph.input_state);
       }
-      run_inference_with_romll(graph);
     }
     if (!graph.dragging && graph.input_state->active_block == nullptr &&
         (IsMouseButtonDown(MOUSE_BUTTON_LEFT) ||
