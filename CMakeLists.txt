@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.15)
-project(blockly-onnx LANGUAGES CXX)
+project(raylib_onnx_machine_learning_language LANGUAGES CXX)
 
 set(RAYLIB_VERSION 5.5)
 set(CMAKE_CXX_STANDARD 17)
@@ -50,23 +50,23 @@ if (NOT raylib_FOUND) # If there's none, fetch and build raylib
   endif()
 endif()
 
-add_library(boil src/boil/boil.cpp)
-target_include_directories(boil PUBLIC
+add_library(romll src/romll/romll.cpp)
+target_include_directories(romll PUBLIC
   include
   "${ONNXRUNTIME_ROOTDIR}/include"
   "${ONNXRUNTIME_ROOTDIR}/include/onnxruntime/core/session"
 )
-target_link_libraries(boil PUBLIC onnx)
+target_link_libraries(romll PUBLIC onnx romllui)
 
-add_library(boilui src/ui/toolbar.cpp src/ui/graph.cpp)
-target_include_directories(boilui PUBLIC include)
-target_link_libraries(boilui PUBLIC raylib)
+add_library(romllui src/ui/toolbar.cpp src/ui/graph.cpp)
+target_include_directories(romllui PUBLIC include)
+target_link_libraries(romllui PUBLIC raylib)
 
 add_executable(${PROJECT_NAME} src/main.cpp)
 target_link_directories(${PROJECT_NAME} PRIVATE
   "${ONNXRUNTIME_ROOTDIR}/lib"
 )
-target_link_libraries(${PROJECT_NAME} PRIVATE onnxruntime boil boilui)
+target_link_libraries(${PROJECT_NAME} PRIVATE onnxruntime romll romllui)
 
 if(APPLE)
   set(CMAKE_OSX_DEPLOYMENT_TARGET "16.0" CACHE STRING "" FORCE)
@@ -77,5 +77,5 @@ if(APPLE)
   )
 endif()
 
-target_compile_options(boil PRIVATE -Wall -Wextra)
+target_compile_options(romll PRIVATE -Wall -Wextra)
 target_compile_options(${PROJECT_NAME} PRIVATE -Wall -Wextra)
