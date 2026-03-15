@@ -34,7 +34,7 @@ onnx::ModelProto ROMLL::parse_ui_graph(const Graph &graph) {
       "main graph"); // TODO: Look at the reasoning for defining graph names
 
   std::unordered_set<Block *> visited;
-  std::deque<Block *> queue = {};
+  std::deque<Block *> queue = {graph.root.get()};
   visited.insert(graph.root.get());
 
   while (!queue.empty()) {

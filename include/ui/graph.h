@@ -32,6 +32,7 @@ public:
   Block(const BlockType &type, const Vector2 &position, const int shape);
 
   void draw(const InputFieldState &input_state);
+  void connect(std::unique_ptr<Block> child);
 
   std::vector<std::unique_ptr<Block>> next;
   std::vector<Block *> previous;
@@ -46,10 +47,12 @@ private:
 public:
   std::unique_ptr<Block> root;
   Block *leaf;
+  std::vector<Block *> orphans;
   std::unique_ptr<InputFieldState> input_state;
   bool inference_ran;
   bool dragging;
   Vector2 drag_offset;
+
   Graph(const int shape); // TODO: Update shape
 
   void inference();
@@ -64,6 +67,8 @@ struct InputFieldState {
   char buffer[32];
   int cursor = -1;
 };
+
+void draw_wire(const Vector2 &from, const Vector2 &to);
 
 void draw_ui(const Graph &graph);
 

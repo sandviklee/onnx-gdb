@@ -57,6 +57,11 @@ Vector2 Block::calculate_input_port() {
   return {this->position.x - 2.0f, this->position.y + h / 2.0f};
 }
 
+void Block::connect(std::unique_ptr<Block> child) {
+  child->previous.push_back(this);
+  this->next.push_back(std::move(child));
+}
+
 void Block::draw(const InputFieldState &input_state) {
   float h = this->height;
   Color block_color;
@@ -146,46 +151,23 @@ void Block::draw(const InputFieldState &input_state) {
 }
 
 Graph::Graph(const int shape)
-    : dragged_block(nullptr), root(nullptr), inference_ran(false),
-      dragging(false) {
-
+    : dragged_block(nullptr), inference_ran(false), dragging(false) {
   this->root = std::make_unique<Block>(BlockType::PORT_INPUT,
                                        Vector2{200.0f, 200.0f}, shape);
-
   auto output = std::make_unique<Block>(BlockType::PORT_OUTPUT,
                                         Vector2{800.0f, 200.0f}, shape);
-
   this->leaf = output.get();
-  this->leaf->previous.push_back(this->root.get());
-  this->root->next.push_back(std::move(output));
+  this->root->connect(std::move(output));
 
   InputFieldState input_state = InputFieldState{};
   this->input_state = std::make_unique<InputFieldState>(input_state);
 };
 
-void draw_wire(Vector2 from, Vector2 to) {
-  float dx = (to.x - from.x) * 0.5f;
-  Vector2 cp1 = {from.x + dx, from.y};
-  Vector2 cp2 = {to.x - dx, to.y};
-
-  Vector2 prev = from;
-  int segments = 30;
-  for (int i = 1; i <= segments; i++) {
-    float t = (float)i / (float)segments;
-    float u = 1.0f - t;
-    Vector2 pt;
-    pt.x = u * u * u * from.x + 3 * u * u * t * cp1.x + 3 * u * t * t * cp2.x +
-           t * t * t * to.x;
-    pt.y = u * u * u * from.y + 3 * u * u * t * cp1.y + 3 * u * t * t * cp2.y +
-           t * t * t * to.y;
-    DrawLineEx(prev, pt, WIRE_THICK, COLOR_WIRE);
-    prev = pt;
-  }
-}
+bool Graph::ready() { return true; }
 
 void Graph::draw() {
   std::unordered_set<Block *> visited;
-  std::deque<Block *> queue = {};
+  std::deque<Block *> queue = {this->root.get()};
   visited.insert(this->root.get());
 
   while (!queue.empty()) {
@@ -378,6 +360,26 @@ void draw_ui(const Graph &graph) {
 
   if (graph.inference_ran) {
     DrawText("Inference complete!", GetScreenWidth() - 200, 80, 18, DARKGREEN);
+  }
+}
+
+void draw_wire(const Vector2 &from, const Vector2 &to) {
+  float dx = (to.x - from.x) * 0.5f;
+  Vector2 cp1 = {from.x + dx, from.y};
+  Vector2 cp2 = {to.x - dx, to.y};
+
+  Vector2 prev = from;
+  int segments = 30;
+  for (int i = 1; i <= segments; i++) {
+    float t = (float)i / (float)segments;
+    float u = 1.0f - t;
+    Vector2 pt;
+    pt.x = u * u * u * from.x + 3 * u * u * t * cp1.x + 3 * u * t * t * cp2.x +
+           t * t * t * to.x;
+    pt.y = u * u * u * from.y + 3 * u * u * t * cp1.y + 3 * u * t * t * cp2.y +
+           t * t * t * to.y;
+    DrawLineEx(prev, pt, WIRE_THICK, COLOR_WIRE);
+    prev = pt;
   }
 }
 
