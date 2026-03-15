@@ -1,52 +1,70 @@
-#pragma once
 #include "raylib.h"
+#include <memory>
 #include <string>
 #include <vector>
 
-enum class BlockType {
-  PORT_INPUT,
-  PORT_OUTPUT,
-  OPERATOR, // Operator node (RELU)
-};
+#pragma once
+#ifndef GRAPH_H
+#define GRAPH_H
 
-struct Block {
+struct InputFieldState;
+
+enum class BlockType { PORT_INPUT, PORT_OUTPUT, RELU };
+
+class Block {
+  friend class Graph;
+
+private:
+  std::string label;
+  Vector2 position;
   BlockType type;
-  std::string label; // Display name: "X", "Y", "RELU"
-  Vector2 position;  // Top-left position in world space
   float width;
   float height;
-  std::vector<float>
-      values; // For PORT_INPUT: editable values; for PORT_OUTPUT: result values
-  bool has_results; // Whether output values have been computed
+  std::vector<float> values;
+  bool has_results;
+
+  float calculate_height();
+  Vector2 calculate_input_port();
+  Vector2 calculate_output_port();
+
+public:
+  Block(const BlockType &type, const Vector2 &position, const int shape);
+
+  void draw(const InputFieldState &input_state);
+
+  std::vector<std::unique_ptr<Block>> next;
+  std::vector<Block *> previous;
+};
+
+class Graph {
+private:
+  std::unique_ptr<Block> root;
+  Block *dragged_block;
+
+  Block *find_block_at(Vector2 cursor_pos);
+
+public:
+  std::unique_ptr<InputFieldState> input_state;
+  bool inference_ran;
+  bool dragging;
+  Vector2 drag_offset;
+  Graph(const int shape); // TODO: Update shape
+
+  void inference();
+  void draw();
+  bool ready();
+  bool update(const Camera2D &camera);
 };
 
 struct InputFieldState {
-  int active_block; // Index of block being edited (-1 = none)
-  int active_field; // Index of field within the block (-1 = none)
-  char buffer[32];  // Text editing buffer
-  int cursor;       // Cursor position in buffer
+  Block *active_block = nullptr;
+  int active_field = -1;
+  char buffer[32];
+  int cursor = -1;
 };
 
-struct GraphState {
-  std::vector<Block> blocks;
-  InputFieldState input_state;
-  bool inference_ran;  // Whether inference has been run at least once
-  bool dragging;       // Whether a block is being dragged
-  int dragged_block;   // Index of block being dragged
-  Vector2 drag_offset; // Offset from block origin to mouse when drag started
-};
+void draw_ui(const Graph &graph);
 
-// TODO:  Initialize a pre-built X -> RELU -> Y graph
-GraphState create_default_graph();
+void reset_input_state(InputFieldState &input_state);
 
-// Draw all blocks and connections on the canvas (call inside BeginMode2D)
-void draw_graph(const GraphState &state);
-
-void draw_graph_ui(const GraphState &state);
-
-// Handle all graph interaction: input field editing, play button, block
-// dragging Returns true if the Play button was pressed
-bool update_graph(GraphState &state, const Camera2D &camera);
-
-// Run inference on the graph
-void run_graph_inference(GraphState &state);
+#endif
