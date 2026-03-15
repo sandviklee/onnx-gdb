@@ -2,10 +2,10 @@
 #include <iostream>
 #include <romll/romll.h>
 
-ROMLL::ROMLL(const Graph &graph, const std::vector<float> input_data,
+ROMLL::ROMLL(Graph &graph, const std::vector<float> input_data,
              const std::vector<int64_t> input_shape,
-             const std::vector<char *> input_names,
-             const std::vector<char *> output_names)
+             const std::vector<char *> &input_names,
+             const std::vector<char *> &output_names)
     : onnx_model(serialize(parse_ui_graph(graph))), input_data(input_data),
       input_shape(input_shape), input_names(input_names),
       output_names(output_names), env(),
@@ -33,30 +33,41 @@ onnx::ModelProto ROMLL::parse_ui_graph(const Graph &graph) {
   onnx_graph->set_name(
       "main graph"); // TODO: Look at the reasoning for defining graph names
 
-  // for (size_t i = 0; i < state.blocks.size(); i++) {
-  //   const Block &block = *state.blocks[i];
-  //   switch (block->type) {
-  //   case BlockType::PORT_INPUT: {
-  //     auto *input = onnx_graph->add_input();
-  //     input->set_name(block->label.c_str());
-  //     auto *input_type = input->mutable_type()->mutable_tensor_type();
-  //     input_type->set_elem_type(onnx::TensorProto_DataType_FLOAT);
-  //     break;
-  //   }
-  //   case BlockType::PORT_OUTPUT: {
-  //     auto *output = onnx_graph->add_output();
-  //     break;
-  //     output->set_name(block->label.c_str());
-  //   }
-  //   case BlockType::RELU: {
-  //     auto *node = graph->add_node();
-  //     node->set_op_type("Relu");
-  //     node->add_input("X");
-  //     node->add_output("Y");
-  //     break;
-  //   }
-  //   }
-  // }
+  std::unordered_set<Block *> visited;
+  std::deque<Block *> queue = {};
+  visited.insert(graph.root.get());
+
+  while (!queue.empty()) {
+    Block *current = queue.front();
+    queue.pop_front();
+    switch (current->type) {
+    case BlockType::PORT_INPUT: {
+      auto *input = onnx_graph->add_input();
+      input->set_name(current->label.c_str());
+      auto *input_type = input->mutable_type()->mutable_tensor_type();
+      input_type->set_elem_type(onnx::TensorProto_DataType_FLOAT);
+      break;
+    }
+    case BlockType::PORT_OUTPUT: {
+      auto *output = onnx_graph->add_output();
+      break;
+      output->set_name(current->label.c_str());
+    }
+    case BlockType::RELU: {
+      auto *node = onnx_graph->add_node();
+      node->set_op_type("Relu");
+      node->add_input(graph.root->label.c_str());
+      node->add_output(graph.leaf->label.c_str());
+      break;
+    }
+    }
+
+    for (auto &child : current->next) {
+      if (visited.insert(child.get()).second) {
+        queue.push_back(child.get());
+      }
+    }
+  }
 
   return model;
 }

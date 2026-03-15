@@ -15,19 +15,20 @@ class Block {
   friend class Graph;
 
 private:
-  std::string label;
   Vector2 position;
-  BlockType type;
   float width;
   float height;
-  std::vector<float> values;
-  bool has_results;
 
   float calculate_height();
   Vector2 calculate_input_port();
   Vector2 calculate_output_port();
 
 public:
+  BlockType type;
+  std::string label;
+  std::vector<float> values;
+  bool has_results;
+
   Block(const BlockType &type, const Vector2 &position, const int shape);
 
   void draw(const InputFieldState &input_state);
@@ -38,12 +39,13 @@ public:
 
 class Graph {
 private:
-  std::unique_ptr<Block> root;
   Block *dragged_block;
 
   Block *find_block_at(Vector2 cursor_pos);
 
 public:
+  std::unique_ptr<Block> root;
+  Block *leaf;
   std::unique_ptr<InputFieldState> input_state;
   bool inference_ran;
   bool dragging;

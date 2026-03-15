@@ -21,10 +21,10 @@ private:
   onnx::ModelProto parse_ui_graph(const Graph &graph);
 
 public:
-  ROMLL(const Graph &graph, const std::vector<float> input_data,
+  ROMLL(Graph &graph, const std::vector<float> input_data,
         const std::vector<int64_t> input_shape,
-        const std::vector<char *> input_names,
-        const std::vector<char *> output_names);
+        const std::vector<char *> &input_names,
+        const std::vector<char *> &output_names);
   void save_model(const onnx::ModelProto &model, const std::string &path);
   std::vector<Ort::Value> run_model(const Ort::RunOptions &options);
 };

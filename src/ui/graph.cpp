@@ -17,10 +17,6 @@ Block::Block(const BlockType &type, const Vector2 &position, const int shape)
   height = this->calculate_height();
   has_results = false;
 
-  std::cout << "Creating block of type " << (int)type << " at position ("
-            << position.x << ", " << position.y << ") with shape " << shape
-            << std::endl;
-
   this->type = type;
   switch (this->type) {
     // TODO: In case we wan't to have special behaviour
@@ -101,7 +97,7 @@ void Block::draw(const InputFieldState &input_state) {
   }
 
   if (this->type == BlockType::PORT_INPUT) {
-    float field_y = this->position.y + 38.0f;
+    float field_y = this->position.y + FIELD_START_H;
     for (size_t i = 0; i < this->values.size(); i++) {
       float fx = this->position.x + 10.0f;
       float fw = this->width - 20.0f;
@@ -120,7 +116,7 @@ void Block::draw(const InputFieldState &input_state) {
           DrawLine(cursor_x, field_y + 4, cursor_x, field_y + FIELD_H - 4, RED);
         }
       } else {
-        char val_text[32];
+        char val_text[FLOAT_BUFFER_SIZE];
         snprintf(val_text, sizeof(val_text), "%.2f", this->values[i]);
         DrawText(val_text, fx + 6, field_y + 5, 18, DARKGRAY);
       }
@@ -130,7 +126,7 @@ void Block::draw(const InputFieldState &input_state) {
   }
 
   if (this->type == BlockType::PORT_OUTPUT && this->has_results) {
-    float field_y = this->position.y + 38.0f;
+    float field_y = this->position.y + FIELD_START_H;
     for (size_t i = 0; i < this->values.size(); i++) {
       float fx = this->position.x + 10.0f;
       float fw = this->width - 20.0f;
@@ -140,7 +136,7 @@ void Block::draw(const InputFieldState &input_state) {
       DrawRectangleRoundedLinesEx({fx, field_y, fw, FIELD_H}, 0.3f, 4, 1.0f,
                                   DARKGRAY);
 
-      char val_text[32];
+      char val_text[FLOAT_BUFFER_SIZE];
       snprintf(val_text, sizeof(val_text), "%.4f", this->values[i]);
       DrawText(val_text, fx + 6, field_y + 5, 18, BLACK);
 
@@ -150,14 +146,17 @@ void Block::draw(const InputFieldState &input_state) {
 }
 
 Graph::Graph(const int shape)
-    : root(nullptr), dragged_block(nullptr), inference_ran(false),
+    : dragged_block(nullptr), root(nullptr), inference_ran(false),
       dragging(false) {
 
   this->root = std::make_unique<Block>(BlockType::PORT_INPUT,
                                        Vector2{200.0f, 200.0f}, shape);
+
   auto output = std::make_unique<Block>(BlockType::PORT_OUTPUT,
                                         Vector2{800.0f, 200.0f}, shape);
-  output->previous.push_back(this->root.get());
+
+  this->leaf = output.get();
+  this->leaf->previous.push_back(this->root.get());
   this->root->next.push_back(std::move(output));
 
   InputFieldState input_state = InputFieldState{};
@@ -186,7 +185,7 @@ void draw_wire(Vector2 from, Vector2 to) {
 
 void Graph::draw() {
   std::unordered_set<Block *> visited;
-  std::deque<Block *> queue = {this->root.get()};
+  std::deque<Block *> queue = {};
   visited.insert(this->root.get());
 
   while (!queue.empty()) {
@@ -251,7 +250,7 @@ bool Graph::update(const Camera2D &camera) {
       return inference_pressed;
     Block &b = *clicked;
 
-    float field_y = b.position.y + 38.0f; // TODO: Fix magic number
+    float field_y = b.position.y + FIELD_START_H; // TODO: Fix magic number
     for (size_t fi = 0; fi < b.values.size(); fi++) {
       Rectangle field_rect = {b.position.x + 10.0f, field_y, b.width - 20.0f,
                               FIELD_H};
