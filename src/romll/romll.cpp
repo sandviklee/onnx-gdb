@@ -52,6 +52,8 @@ onnx::ModelProto ROMLL::parse_ui_graph(const Graph &graph) {
     case BlockType::PORT_OUTPUT: {
       auto *output = onnx_graph->add_output();
       output->set_name(current->label.c_str());
+      auto *output_type = output->mutable_type()->mutable_tensor_type();
+      output_type->set_elem_type(onnx::TensorProto_DataType_FLOAT);
       break;
     }
     case BlockType::RELU: {
@@ -80,6 +82,9 @@ onnx::ModelProto ROMLL::parse_ui_graph(const Graph &graph) {
 void ROMLL::run_inference() {
   // TODO: Should return error code and show error in GUI.
   try {
+    input_data = graph.root->values;
+    input_shape = {(int64_t)input_data.size()};
+
     Ort::RunOptions run_options{nullptr};
     std::vector<Ort::Value> output = run_model(run_options);
     Ort::TensorTypeAndShapeInfo info = output[0].GetTensorTypeAndShapeInfo();
