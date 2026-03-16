@@ -11,7 +11,6 @@ ROMLL::ROMLL(Graph &graph)
       graph(graph) {
   input_data = graph.root->values;
   input_shape = {(int64_t)input_data.size()};
-
   input_names = {const_cast<char *>(graph.root->label.c_str())};
   output_names = {const_cast<char *>(graph.leaf->label.c_str())};
 };
@@ -30,7 +29,6 @@ onnx::ModelProto initialize_onnx_model() {
 
 onnx::ModelProto ROMLL::parse_ui_graph(const Graph &graph) {
   onnx::ModelProto model = initialize_onnx_model();
-
   auto *onnx_graph = model.mutable_graph();
   onnx_graph->set_name(
       "main graph"); // TODO: Look at the reasoning for defining graph names
@@ -41,6 +39,7 @@ onnx::ModelProto ROMLL::parse_ui_graph(const Graph &graph) {
 
   while (!queue.empty()) {
     Block *current = queue.front();
+    std::cout << "Processing block: " << current->label << std::endl;
     queue.pop_front();
     switch (current->type) {
     case BlockType::PORT_INPUT: {
@@ -52,14 +51,18 @@ onnx::ModelProto ROMLL::parse_ui_graph(const Graph &graph) {
     }
     case BlockType::PORT_OUTPUT: {
       auto *output = onnx_graph->add_output();
-      break;
       output->set_name(current->label.c_str());
+      break;
     }
     case BlockType::RELU: {
       auto *node = onnx_graph->add_node();
       node->set_op_type("Relu");
-      node->add_input(graph.root->label.c_str());
-      node->add_output(graph.leaf->label.c_str());
+      for (size_t i = 0; i < current->previous.size(); i++) {
+        node->add_input(current->previous[i]->label.c_str());
+      }
+      for (size_t i = 0; i < current->next.size(); i++) {
+        node->add_output(current->next[i]->label.c_str());
+      }
       break;
     }
     }
@@ -86,16 +89,12 @@ void ROMLL::run_inference() {
 
     graph.root->values.resize(size);
     for (int64_t i = 0; i < size; i++) {
+      std::cout << "Output value " << i << ": " << data[i] << std::endl;
       graph.leaf->values[i] = data[i];
     }
     graph.leaf->has_results = true;
     graph.inference_ran = true;
 
-    std::cout << "Inference output: [";
-    for (int64_t i = 0; i < size; i++) {
-      std::cout << data[i] << (i < size - 1 ? ", " : "");
-    }
-    std::cout << "]" << std::endl;
   } catch (const Ort::Exception &e) {
     std::cerr << "ONNX Runtime error: " << e.what() << std::endl;
   }

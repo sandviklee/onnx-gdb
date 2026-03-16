@@ -25,6 +25,8 @@ int main() {
     bool inference_pressed = graph.update(camera);
 
     if (inference_pressed) {
+      romll.run_inference();
+
       if (graph.input_state->active_block != nullptr) {
         reset_input_state(*graph.input_state);
       }

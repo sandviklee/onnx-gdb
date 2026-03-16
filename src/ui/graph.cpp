@@ -7,16 +7,14 @@
 #include <unordered_set>
 
 Block::Block(const BlockType &type, const Vector2 &position, const int shape)
-    : position(position) {
+    : position(position), type(type) {
   for (int i = 0; i < shape; i++) {
     values.push_back(0.0f);
   }
-
   width = BLOCK_W;
-  height = this->calculate_height();
+  height = calculate_height();
   has_results = false;
 
-  this->type = type;
   switch (this->type) {
     // TODO: In case we wan't to have special behaviour
   case BlockType::PORT_INPUT: {
@@ -36,7 +34,7 @@ Block::Block(const BlockType &type, const Vector2 &position, const int shape)
 
 float Block::calculate_height() {
   if (this->type == BlockType::PORT_INPUT) {
-    return BLOCK_H_BASE + (FIELD_H + FIELD_PAD) * this->values.size() +
+    return BLOCK_H_BASE + (FIELD_H + FIELD_PAD + 2.0f) * this->values.size() +
            FIELD_PAD;
   }
   if (this->type == BlockType::PORT_OUTPUT && this->has_results) {
@@ -155,8 +153,13 @@ Graph::Graph(const int shape)
                                        Vector2{200.0f, 200.0f}, shape);
   auto output = std::make_unique<Block>(BlockType::PORT_OUTPUT,
                                         Vector2{800.0f, 200.0f}, shape);
+  auto relu =
+      std::make_unique<Block>(BlockType::RELU, Vector2{450.0f, 400.0f}, shape);
+
   this->leaf = output.get();
-  this->root->connect(std::move(output));
+
+  relu->connect(std::move(output));
+  this->root->connect(std::move(relu));
 
   InputFieldState input_state = InputFieldState{};
   this->input_state = std::make_unique<InputFieldState>(input_state);
@@ -173,6 +176,7 @@ void Graph::draw() {
     Block *current = queue.front();
     queue.pop_front();
     current->draw(*this->input_state);
+    current->height = current->calculate_height();
 
     for (auto &child : current->next) {
       if (visited.insert(child.get()).second) {
@@ -386,18 +390,3 @@ void reset_input_state(InputFieldState &input_state) {
   input_state.active_block = nullptr;
   input_state.active_field = -1;
 }
-
-// void run_graph_inference(GraphState &state) {
-//   if (state.blocks.size() < 3)
-//     return;
-//
-//   Block &input_block = *state.blocks[0];
-//
-//   Block &output_block = *state.blocks[2];
-//   output_block.values.resize(input_block.values.size());
-//   for (size_t i = 0; i < input_block.values.size(); i++) {
-//     output_block.values[i] = std::max(0.0f, input_block.values[i]);
-//   }
-//   output_block.has_results = true;
-//   state.inference_ran = true;
-// }
