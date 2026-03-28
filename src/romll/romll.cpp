@@ -34,8 +34,8 @@ onnx::ModelProto ROMLL::parse_ui_graph(const Graph &graph) {
       "main graph"); // TODO: Look at the reasoning for defining graph names
 
   std::unordered_set<Block *> visited;
-  std::deque<Block *> queue = {graph.root.get()};
-  visited.insert(graph.root.get());
+  std::deque<Block *> queue = {graph.root};
+  visited.insert(graph.root);
 
   while (!queue.empty()) {
     Block *current = queue.front();
@@ -69,9 +69,9 @@ onnx::ModelProto ROMLL::parse_ui_graph(const Graph &graph) {
     }
     }
 
-    for (auto &child : current->next) {
-      if (visited.insert(child.get()).second) {
-        queue.push_back(child.get());
+    for (auto *child : current->next) {
+      if (visited.insert(child).second) {
+        queue.push_back(child);
       }
     }
   }
@@ -79,9 +79,22 @@ onnx::ModelProto ROMLL::parse_ui_graph(const Graph &graph) {
   return model;
 }
 
+void ROMLL::rebuild_session() {
+  onnx_model = serialize(parse_ui_graph(graph));
+  session = Ort::Session(env, onnx_model.data(), onnx_model.size(),
+                         Ort::SessionOptions{nullptr});
+  input_names = {const_cast<char *>(graph.root->label.c_str())};
+  output_names = {const_cast<char *>(graph.leaf->label.c_str())};
+  graph.topology_dirty = false;
+}
+
 void ROMLL::run_inference() {
   // TODO: Should return error code and show error in GUI.
   try {
+    if (graph.topology_dirty) {
+      rebuild_session();
+    }
+
     input_data = graph.root->values;
     input_shape = {(int64_t)input_data.size()};
 

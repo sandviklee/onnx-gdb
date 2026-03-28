@@ -20,6 +20,7 @@ private:
   std::string serialize(const onnx::ModelProto &onnx_protobuf);
   onnx::ModelProto parse_ui_graph(const Graph &graph);
   std::vector<Ort::Value> run_model(const Ort::RunOptions &options);
+  void rebuild_session();
 
 public:
   ROMLL(Graph &graph);

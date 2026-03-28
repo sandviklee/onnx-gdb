@@ -16,7 +16,6 @@ Block::Block(const BlockType &type, const Vector2 &position, const int shape)
   has_results = false;
 
   switch (this->type) {
-    // TODO: In case we wan't to have special behaviour
   case BlockType::PORT_INPUT: {
     this->label = "INPUT";
     break;
@@ -52,11 +51,6 @@ Vector2 Block::calculate_output_port() {
 Vector2 Block::calculate_input_port() {
   float h = this->height;
   return {this->position.x - 2.0f, this->position.y + h / 2.0f};
-}
-
-void Block::connect(std::unique_ptr<Block> child) {
-  child->previous.push_back(this);
-  this->next.push_back(std::move(child));
 }
 
 void Block::draw(const InputFieldState &input_state) {
@@ -147,66 +141,177 @@ void Block::draw(const InputFieldState &input_state) {
   }
 }
 
+// ─── Graph ──────────────────────────────────────────────────────────────────
+
 Graph::Graph(const int shape)
-    : dragged_block(nullptr), inference_ran(false), dragging(false) {
-  this->root = std::make_unique<Block>(BlockType::PORT_INPUT,
-                                       Vector2{200.0f, 200.0f}, shape);
-  auto output = std::make_unique<Block>(BlockType::PORT_OUTPUT,
-                                        Vector2{800.0f, 200.0f}, shape);
-  auto relu =
-      std::make_unique<Block>(BlockType::RELU, Vector2{450.0f, 400.0f}, shape);
+    : dragged_block(nullptr), root(nullptr), leaf(nullptr), inference_ran(false),
+      dragging(false), topology_dirty(false) {
 
-  this->leaf = output.get();
+  // Create blocks; Graph owns them all.
+  blocks.push_back(
+      std::make_unique<Block>(BlockType::PORT_INPUT, Vector2{200.0f, 200.0f}, shape));
+  blocks.push_back(
+      std::make_unique<Block>(BlockType::PORT_OUTPUT, Vector2{800.0f, 200.0f}, shape));
+  blocks.push_back(
+      std::make_unique<Block>(BlockType::RELU, Vector2{450.0f, 400.0f}, shape));
 
-  relu->connect(std::move(output));
-  this->root->connect(std::move(relu));
+  Block *input_block = blocks[0].get();
+  Block *output_block = blocks[1].get();
+  Block *relu_block = blocks[2].get();
 
-  InputFieldState input_state = InputFieldState{};
-  this->input_state = std::make_unique<InputFieldState>(input_state);
-};
+  this->root = input_block;
+  this->leaf = output_block;
 
-bool Graph::ready() { return true; }
+  // Wire up: INPUT -> Relu -> OUTPUT
+  connect(input_block, relu_block);
+  connect(relu_block, output_block);
 
-void Graph::draw() {
+  InputFieldState input_state_val = InputFieldState{};
+  this->input_state = std::make_unique<InputFieldState>(input_state_val);
+
+  refresh_orphans();
+}
+
+void Graph::connect(Block *parent, Block *child) {
+  // Avoid duplicate connections.
+  for (auto *c : parent->next) {
+    if (c == child)
+      return;
+  }
+  parent->next.push_back(child);
+  child->previous.push_back(parent);
+  topology_dirty = true;
+  refresh_orphans();
+}
+
+void Graph::disconnect(Block *parent, Block *child) {
+  parent->next.erase(
+      std::remove(parent->next.begin(), parent->next.end(), child),
+      parent->next.end());
+  child->previous.erase(
+      std::remove(child->previous.begin(), child->previous.end(), parent),
+      child->previous.end());
+  topology_dirty = true;
+  refresh_orphans();
+}
+
+bool Graph::is_reachable_from_root(Block *block) {
+  if (root == nullptr)
+    return false;
   std::unordered_set<Block *> visited;
-  std::deque<Block *> queue = {this->root.get()};
-  visited.insert(this->root.get());
-
+  std::deque<Block *> queue = {root};
+  visited.insert(root);
   while (!queue.empty()) {
-    Block *current = queue.front();
+    Block *cur = queue.front();
     queue.pop_front();
-    current->draw(*this->input_state);
-    current->height = current->calculate_height();
-
-    for (auto &child : current->next) {
-      if (visited.insert(child.get()).second) {
-        queue.push_back(child.get());
-        draw_wire(current->calculate_output_port(),
-                  child->calculate_input_port());
+    if (cur == block)
+      return true;
+    for (auto *child : cur->next) {
+      if (visited.insert(child).second) {
+        queue.push_back(child);
       }
+    }
+  }
+  return false;
+}
+
+void Graph::refresh_orphans() {
+  orphans.clear();
+  for (auto &bp : blocks) {
+    Block *b = bp.get();
+    if (b == root)
+      continue;
+    if (!is_reachable_from_root(b)) {
+      orphans.push_back(b);
     }
   }
 }
 
+bool Graph::ready() { return true; }
+
+void Graph::draw(const Camera2D &camera) {
+  // Draw connected blocks (BFS from root).
+  if (root) {
+    std::unordered_set<Block *> visited;
+    std::deque<Block *> queue = {root};
+    visited.insert(root);
+
+    while (!queue.empty()) {
+      Block *current = queue.front();
+      queue.pop_front();
+      current->draw(*this->input_state);
+      current->height = current->calculate_height();
+
+      for (auto *child : current->next) {
+        if (visited.insert(child).second) {
+          queue.push_back(child);
+          draw_wire(current->calculate_output_port(),
+                    child->calculate_input_port());
+        }
+      }
+    }
+  }
+
+  // Draw orphan blocks (not reachable from root).
+  for (auto *orphan : orphans) {
+    orphan->draw(*this->input_state);
+    orphan->height = orphan->calculate_height();
+
+    // Draw wires between orphans and their children (local connections).
+    for (auto *child : orphan->next) {
+      draw_wire(orphan->calculate_output_port(), child->calculate_input_port());
+    }
+  }
+
+  // Draw the pending connection wire while dragging from a port.
+  if (connection_state.active && connection_state.from_block) {
+    Vector2 from;
+    if (connection_state.from_port == PortKind::OUTPUT) {
+      from = connection_state.from_block->calculate_output_port();
+    } else {
+      from = connection_state.from_block->calculate_input_port();
+    }
+    Vector2 mouse_world = GetScreenToWorld2D(GetMousePosition(), camera);
+    draw_wire(from, mouse_world);
+  }
+}
+
 Block *Graph::find_block_at(Vector2 cursor_pos) {
-  std::unordered_set<Block *> visited;
-  std::deque<Block *> queue = {this->root.get()};
-  visited.insert(this->root.get());
-
-  while (!queue.empty()) {
-    Block *current = queue.front();
-    queue.pop_front();
-
-    float h = current->height;
-    Rectangle block_rect = {current->position.x, current->position.y,
-                            current->width, h};
+  // Search all blocks (connected + orphans).
+  for (auto &bp : blocks) {
+    Block *b = bp.get();
+    float h = b->height;
+    Rectangle block_rect = {b->position.x, b->position.y, b->width, h};
     if (CheckCollisionPointRec(cursor_pos, block_rect)) {
-      return current;
+      return b;
+    }
+  }
+  return nullptr;
+}
+
+Block *Graph::find_port_at(Vector2 cursor_pos, PortKind &out_port) {
+  for (auto &bp : blocks) {
+    Block *b = bp.get();
+
+    // Check output port (not on PORT_OUTPUT blocks since they have no output).
+    if (b->type != BlockType::PORT_OUTPUT) {
+      Vector2 op = b->calculate_output_port();
+      float dx = cursor_pos.x - op.x;
+      float dy = cursor_pos.y - op.y;
+      if (dx * dx + dy * dy <= PORT_RADIUS * PORT_RADIUS * 4.0f) {
+        out_port = PortKind::OUTPUT;
+        return b;
+      }
     }
 
-    for (auto &child : current->next) {
-      if (visited.insert(child.get()).second) {
-        queue.push_back(child.get());
+    // Check input port (not on PORT_INPUT blocks since they have no input).
+    if (b->type != BlockType::PORT_INPUT) {
+      Vector2 ip = b->calculate_input_port();
+      float dx = cursor_pos.x - ip.x;
+      float dy = cursor_pos.y - ip.y;
+      if (dx * dx + dy * dy <= PORT_RADIUS * PORT_RADIUS * 4.0f) {
+        out_port = PortKind::INPUT;
+        return b;
       }
     }
   }
@@ -218,27 +323,41 @@ bool Graph::update(const Camera2D &camera) {
   Vector2 mouse_screen = GetMousePosition();
   Vector2 mouse_world = GetScreenToWorld2D(mouse_screen, camera);
 
-  Rectangle inference_rect = {(float)GetScreenWidth() - 160, 20, 140,
-                              50}; // TODO: Make this a button reference
+  Rectangle inference_rect = {(float)GetScreenWidth() - 160, 20, 140, 50};
   if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) &&
       CheckCollisionPointRec(mouse_screen, inference_rect)) {
     inference_pressed = true;
   }
 
+  // ── Handle mouse press ──────────────────────────────────────────────────
   if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && !inference_pressed) {
     if (this->input_state->active_block != nullptr) {
       reset_input_state(*this->input_state);
     }
+
+    // First, check if the click is on a port circle.
+    PortKind clicked_port;
+    Block *port_block = find_port_at(mouse_world, clicked_port);
+    if (port_block) {
+      // Right-click on a port disconnects (handled below). Left-click starts a
+      // connection drag.
+      connection_state.from_block = port_block;
+      connection_state.from_port = clicked_port;
+      connection_state.active = true;
+      return inference_pressed;
+    }
+
+    // Otherwise, normal block interaction (fields, dragging).
     bool clicked_field = false;
     Block *clicked = find_block_at(mouse_world);
     if (!clicked)
       return inference_pressed;
     Block &b = *clicked;
 
-    float field_y = b.position.y + FIELD_START_H; // TODO: Fix magic number
+    float field_y = b.position.y + FIELD_START_H;
     for (size_t fi = 0; fi < b.values.size(); fi++) {
       Rectangle field_rect = {b.position.x + 10.0f, field_y, b.width - 20.0f,
-                              FIELD_H};
+                               FIELD_H};
       if (CheckCollisionPointRec(mouse_world, field_rect)) {
         if (this->input_state->active_block != nullptr &&
             this->input_state->active_field >= 0) {
@@ -272,6 +391,48 @@ bool Graph::update(const Camera2D &camera) {
     }
   }
 
+  // ── Handle right-click to disconnect ────────────────────────────────────
+  if (IsMouseButtonPressed(MOUSE_RIGHT_BUTTON)) {
+    PortKind clicked_port;
+    Block *port_block = find_port_at(mouse_world, clicked_port);
+    if (port_block) {
+      if (clicked_port == PortKind::OUTPUT) {
+        // Disconnect all children from this output port.
+        auto children_copy = port_block->next;
+        for (auto *child : children_copy) {
+          disconnect(port_block, child);
+        }
+      } else {
+        // Disconnect all parents from this input port.
+        auto parents_copy = port_block->previous;
+        for (auto *parent : parents_copy) {
+          disconnect(parent, port_block);
+        }
+      }
+    }
+  }
+
+  // ── Finish connection drag on mouse release ─────────────────────────────
+  if (connection_state.active && IsMouseButtonReleased(MOUSE_LEFT_BUTTON)) {
+    PortKind target_port;
+    Block *target = find_port_at(mouse_world, target_port);
+
+    if (target && target != connection_state.from_block) {
+      // Must connect output -> input (not same kind).
+      if (connection_state.from_port == PortKind::OUTPUT &&
+          target_port == PortKind::INPUT) {
+        connect(connection_state.from_block, target);
+      } else if (connection_state.from_port == PortKind::INPUT &&
+                 target_port == PortKind::OUTPUT) {
+        connect(target, connection_state.from_block);
+      }
+    }
+
+    connection_state.active = false;
+    connection_state.from_block = nullptr;
+  }
+
+  // ── Text input handling ─────────────────────────────────────────────────
   if (this->input_state->active_block != nullptr) {
     int key = GetCharPressed();
     while (key > 0) {
@@ -333,6 +494,7 @@ bool Graph::update(const Camera2D &camera) {
     }
   }
 
+  // ── Block dragging ──────────────────────────────────────────────────────
   if (this->dragging && IsMouseButtonDown(MOUSE_LEFT_BUTTON)) {
     Block &b = *this->dragged_block;
     b.position.x = mouse_world.x - this->drag_offset.x;

@@ -1,4 +1,5 @@
 #include "raylib.h"
+#include <algorithm>
 #include <memory>
 #include <string>
 #include <vector>
@@ -11,19 +12,19 @@ struct InputFieldState;
 
 enum class BlockType { PORT_INPUT, PORT_OUTPUT, RELU };
 
+enum class PortKind { INPUT, OUTPUT };
+
 class Block {
   friend class Graph;
 
 private:
-  Vector2 position;
   float width;
   float height;
 
   float calculate_height();
-  Vector2 calculate_input_port();
-  Vector2 calculate_output_port();
 
 public:
+  Vector2 position;
   BlockType type;
   std::string label;
   std::vector<float> values;
@@ -31,11 +32,21 @@ public:
 
   Block(const BlockType &type, const Vector2 &position, const int shape);
 
-  void draw(const InputFieldState &input_state);
-  void connect(std::unique_ptr<Block> child);
+  Vector2 calculate_input_port();
+  Vector2 calculate_output_port();
 
-  std::vector<std::unique_ptr<Block>> next;
+  void draw(const InputFieldState &input_state);
+
+  // Connections are raw pointers; ownership lives in Graph::blocks.
+  std::vector<Block *> next;
   std::vector<Block *> previous;
+};
+
+// Tracks an in-progress connection drag from one port.
+struct ConnectionState {
+  Block *from_block = nullptr;
+  PortKind from_port = PortKind::OUTPUT;
+  bool active = false;
 };
 
 class Graph {
@@ -43,22 +54,38 @@ private:
   Block *dragged_block;
 
   Block *find_block_at(Vector2 cursor_pos);
+  Block *find_port_at(Vector2 cursor_pos, PortKind &out_port);
 
 public:
-  std::unique_ptr<Block> root;
+  // Central ownership of ALL blocks.
+  std::vector<std::unique_ptr<Block>> blocks;
+
+  Block *root;
   Block *leaf;
+
+  // Blocks not connected to the root DAG.
   std::vector<Block *> orphans;
+
   std::unique_ptr<InputFieldState> input_state;
+  ConnectionState connection_state;
   bool inference_ran;
   bool dragging;
+  bool topology_dirty;
   Vector2 drag_offset;
 
-  Graph(const int shape); // TODO: Update shape
+  Graph(const int shape);
+
+  void connect(Block *parent, Block *child);
+  void disconnect(Block *parent, Block *child);
 
   void inference();
-  void draw();
+  void draw(const Camera2D &camera);
   bool ready();
   bool update(const Camera2D &camera);
+
+private:
+  void refresh_orphans();
+  bool is_reachable_from_root(Block *block);
 };
 
 struct InputFieldState {

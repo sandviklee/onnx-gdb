@@ -31,7 +31,8 @@ int main() {
         reset_input_state(*graph.input_state);
       }
     }
-    if (!graph.dragging && graph.input_state->active_block == nullptr &&
+    if (!graph.dragging && !graph.connection_state.active &&
+        graph.input_state->active_block == nullptr &&
         (IsMouseButtonDown(MOUSE_BUTTON_LEFT) ||
          IsMouseButtonDown(MOUSE_BUTTON_MIDDLE))) {
       Vector2 delta = GetMouseDelta();
@@ -62,7 +63,7 @@ int main() {
     DrawGrid(100, 50);
     rlPopMatrix();
 
-    graph.draw();
+    graph.draw(camera);
 
     EndMode2D();
 
