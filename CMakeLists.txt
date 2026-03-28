@@ -5,6 +5,7 @@ set(RAYLIB_VERSION 5.5)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+set(LOCAL_ONNX_RUNTIME_LIB_DIR "onnxruntime-linux-x64-1.24.4") # This needs to be chnaged based on ONNX version and linux platform.:
 
 if(WIN32)
   add_compile_options(/W4)
@@ -22,7 +23,7 @@ if(NOT ONNXRUNTIME_ROOTDIR)
   elseif(WIN32)
     set(ONNXRUNTIME_ROOTDIR "C:/Program Files/onnxruntime")
   else()
-    set(ONNXRUNTIME_ROOTDIR "/usr/local")
+    set(ONNXRUNTIME_ROOTDIR "/usr/local/${LOCAL_ONNX_RUNTIME_LIB_DIR}")
   endif()
 endif()
 
@@ -51,11 +52,18 @@ if (NOT raylib_FOUND) # If there's none, fetch and build raylib
 endif()
 
 add_library(romll src/romll/romll.cpp)
-target_include_directories(romll PUBLIC
+if (APPLE)
+  target_include_directories(romll PUBLIC
   include
-  "${ONNXRUNTIME_ROOTDIR}/include"
+  "${ONNXRUNTIME_ROOTDIR}/include/onnxruntime"
   "${ONNXRUNTIME_ROOTDIR}/include/onnxruntime/core/session"
 )
+else()
+  target_include_directories(romll PUBLIC
+  include
+  "${ONNXRUNTIME_ROOTDIR}/include"
+)
+endif()
 target_link_libraries(romll PUBLIC onnx romllui)
 
 add_library(romllui src/ui/toolbar.cpp src/ui/graph.cpp)

@@ -4,7 +4,7 @@
 #include "romll/romll.h"
 #include "ui/config.h"
 #include "ui/graph.h"
-#include <onnxruntime/onnxruntime_cxx_api.h>
+#include <onnxruntime_cxx_api.h>
 
 int main() {
   struct raylib_config config = {

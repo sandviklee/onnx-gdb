@@ -1,6 +1,6 @@
 #include "ui/graph.h"
 #include <onnx/onnx_pb.h>
-#include <onnxruntime/onnxruntime_cxx_api.h>
+#include <onnxruntime_cxx_api.h>
 
 #pragma once
 #ifndef ROMLL_H
