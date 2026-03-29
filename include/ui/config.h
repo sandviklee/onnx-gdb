@@ -1,5 +1,8 @@
 #include "raylib.h"
 
+static constexpr int TOOLBAR_PADDING = 10;
+static constexpr int TOOLBAR_BUTTON_SIZE = 50;
+
 static constexpr int FLOAT_BUFFER_SIZE = 32;
 
 static constexpr float BLOCK_W = 180.0f;
