@@ -66,7 +66,7 @@ else()
 endif()
 target_link_libraries(romll PUBLIC onnx romllui)
 
-add_library(romllui src/ui/toolbar.cpp src/ui/graph.cpp)
+add_library(romllui src/ui/toolbar.cpp src/ui/graph.cpp src/ui/block.cpp)
 target_include_directories(romllui PUBLIC include)
 target_link_libraries(romllui PUBLIC raylib)
 
