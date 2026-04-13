@@ -11,8 +11,8 @@ ROMLL::ROMLL(Graph &graph)
       graph(graph) {
   input_data = graph.root->values;
   input_shape = {(int64_t)input_data.size()};
-  input_names = {const_cast<char *>(graph.root->label.c_str())};
-  output_names = {const_cast<char *>(graph.leaf->label.c_str())};
+  input_names = {const_cast<char *>(graph.root->definition->name.c_str())};
+  output_names = {const_cast<char *>(graph.leaf->definition->name.c_str())};
 };
 
 onnx::ModelProto initialize_onnx_model() {
@@ -39,34 +39,31 @@ onnx::ModelProto ROMLL::parse_ui_graph(const Graph &graph) {
 
   while (!queue.empty()) {
     Block *current = queue.front();
-    std::cout << "Processing block: " << current->label << std::endl;
     queue.pop_front();
-    switch (current->type) {
-    case BlockType::PORT_INPUT: {
+
+    if (current->definition->name == "PortInput") {
       auto *input = onnx_graph->add_input();
       input->set_name(current->label.c_str());
       auto *input_type = input->mutable_type()->mutable_tensor_type();
       input_type->set_elem_type(onnx::TensorProto_DataType_FLOAT);
-      break;
-    }
-    case BlockType::PORT_OUTPUT: {
+    } else if (current->definition->name == "PortOutput") {
       auto *output = onnx_graph->add_output();
       output->set_name(current->label.c_str());
       auto *output_type = output->mutable_type()->mutable_tensor_type();
       output_type->set_elem_type(onnx::TensorProto_DataType_FLOAT);
-      break;
-    }
-    case BlockType::RELU: {
+    } else {
       auto *node = onnx_graph->add_node();
-      node->set_op_type("Relu");
+      node->set_name(current->label.c_str());
+      node->set_op_type(current->definition->name.c_str());
       for (size_t i = 0; i < current->previous.size(); i++) {
         node->add_input(current->previous[i]->label.c_str());
       }
-      for (size_t i = 0; i < current->next.size(); i++) {
-        node->add_output(current->next[i]->label.c_str());
+      if (current->next.size() > 0 &&
+          current->next[0]->definition->name == "PortOutput") {
+        node->add_output(current->next[0]->label.c_str());
+      } else {
+        node->add_output(current->label.c_str());
       }
-      break;
-    }
     }
 
     for (auto *child : current->next) {
@@ -83,8 +80,8 @@ void ROMLL::rebuild_session() {
   onnx_model = serialize(parse_ui_graph(graph));
   session = Ort::Session(env, onnx_model.data(), onnx_model.size(),
                          Ort::SessionOptions{nullptr});
-  input_names = {const_cast<char *>(graph.root->label.c_str())};
   output_names = {const_cast<char *>(graph.leaf->label.c_str())};
+  input_names = {const_cast<char *>(graph.root->label.c_str())};
   graph.topology_dirty = false;
 }
 
