@@ -1,4 +1,5 @@
 #include "ui/graph.h"
+#include "raylib.h"
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
@@ -6,18 +7,17 @@
 #include <memory>
 #include <unordered_set>
 
-Graph::Graph(const int shape)
+Graph::Graph(const size_t shape)
     : dragged_block(nullptr), root(nullptr), leaf(nullptr),
       inference_ran(false), dragging(false), topology_dirty(false) {
-
   // TODO: We will only push an output and input block.
 
-  blocks.push_back(std::make_unique<Block>(BlockType::PORT_INPUT,
+  blocks.push_back(std::make_unique<Block>("PortInput", "X",
                                            Vector2{200.0f, 200.0f}, shape));
-  blocks.push_back(std::make_unique<Block>(BlockType::PORT_OUTPUT,
+  blocks.push_back(std::make_unique<Block>("PortOutput", " Y",
                                            Vector2{800.0f, 200.0f}, shape));
   blocks.push_back(
-      std::make_unique<Block>(BlockType::RELU, Vector2{450.0f, 400.0f}, shape));
+      std::make_unique<Block>("Relu", "Relu", Vector2{450.0f, 400.0f}, shape));
 
   Block *input_block = blocks[0].get();
   Block *output_block = blocks[1].get();
@@ -30,8 +30,46 @@ Graph::Graph(const int shape)
   connect(relu_block, output_block);
 
   InputFieldState input_state_val = InputFieldState{};
-  this->input_state = std::make_unique<InputFieldState>(input_state_val);
 
+  this->input_state = std::make_unique<InputFieldState>(input_state_val);
+  refresh_orphans();
+}
+
+int Graph::count_blocks_with_type(const std::string type) {
+  int count = 0;
+  for (const auto &bp : blocks) {
+    if (bp->definition->name == type) {
+      count++;
+    }
+  }
+  for (const auto &orphan : orphans) {
+    if (orphan->definition->name == type) {
+      count++;
+    }
+  }
+  return count;
+}
+
+void Graph::push_block(Block *block) {
+  blocks.push_back(std::unique_ptr<Block>(block));
+  refresh_orphans();
+}
+
+void Graph::remove_block(Block *block) {
+  for (auto *prev : block->previous) {
+    auto &n = prev->next;
+    n.erase(std::remove(n.begin(), n.end(), block), n.end());
+  }
+  for (auto *nxt : block->next) {
+    auto &p = nxt->previous;
+    p.erase(std::remove(p.begin(), p.end(), block), p.end());
+  }
+
+  auto it = std::find_if(blocks.begin(), blocks.end(),
+                         [block](const auto &bp) { return bp.get() == block; });
+  if (it != blocks.end()) {
+    blocks.erase(it);
+  }
   refresh_orphans();
 }
 
@@ -91,7 +129,28 @@ void Graph::refresh_orphans() {
 
 bool Graph::ready() { return true; }
 
+void Graph::draw_grid(const Camera2D &camera) {
+  float gridSpacing = 150.0f;
+  float invZoom = 1.0f / camera.zoom;
+  float halfW = GetScreenWidth() * invZoom;
+  float halfH = GetScreenHeight() * invZoom;
+
+  float startX = floorf((camera.target.x - halfW) / gridSpacing) * gridSpacing;
+  float startY = floorf((camera.target.y - halfH) / gridSpacing) * gridSpacing;
+  float endX = camera.target.x + halfW;
+  float endY = camera.target.y + halfH;
+
+  for (float x = startX; x <= endX; x += gridSpacing) {
+    DrawLineV({x, startY}, {x, endY}, LIGHTGRAY);
+  }
+  for (float y = startY; y <= endY; y += gridSpacing) {
+    DrawLineV({startX, y}, {endX, y}, LIGHTGRAY);
+  }
+}
+
 void Graph::draw(const Camera2D &camera) {
+  draw_grid(camera);
+
   if (root) {
     std::unordered_set<Block *> visited;
     std::deque<Block *> queue = {root};
@@ -103,11 +162,15 @@ void Graph::draw(const Camera2D &camera) {
       current->draw(*this->input_state);
       current->height = current->calculate_height();
 
+      size_t curr_child = 0;
       for (auto *child : current->next) {
         if (visited.insert(child).second) {
           queue.push_back(child);
-          draw_wire(current->calculate_output_port(),
-                    child->calculate_input_port());
+          draw_wire(current->calculate_output_ports()
+                        [0], // TODO: If multiple output ports we need to
+                             // specify which child is connected to it.
+                    child->calculate_input_ports()[curr_child]);
+          curr_child++;
         }
       }
     }
@@ -118,16 +181,17 @@ void Graph::draw(const Camera2D &camera) {
     orphan->height = orphan->calculate_height();
 
     for (auto *child : orphan->next) {
-      draw_wire(orphan->calculate_output_port(), child->calculate_input_port());
+      draw_wire(orphan->calculate_output_ports()[0],
+                child->calculate_input_ports()[0]);
     }
   }
 
   if (connection_state.active && connection_state.from_block) {
     Vector2 from;
     if (connection_state.from_port == PortKind::OUTPUT) {
-      from = connection_state.from_block->calculate_output_port();
+      from = connection_state.from_block->calculate_output_ports()[0];
     } else {
-      from = connection_state.from_block->calculate_input_port();
+      from = connection_state.from_block->calculate_input_ports()[0];
     }
     Vector2 mouse_world = GetScreenToWorld2D(GetMousePosition(), camera);
     draw_wire(from, mouse_world);
@@ -149,42 +213,51 @@ Block *Graph::find_block_at(Vector2 cursor_pos) {
 Block *Graph::find_port_at(Vector2 cursor_pos, PortKind &out_port) {
   for (auto &bp : blocks) {
     Block *b = bp.get();
+    auto definition = b->definition;
 
-    if (b->type != BlockType::PORT_OUTPUT) {
-      Vector2 op = b->calculate_output_port();
-      float dx = cursor_pos.x - op.x;
-      float dy = cursor_pos.y - op.y;
-      if (dx * dx + dy * dy <= PORT_RADIUS * PORT_RADIUS * 4.0f) {
-        out_port = PortKind::OUTPUT;
-        return b;
+    if (definition->num_outputs > 0) {
+      auto ops = b->calculate_output_ports();
+      for (auto op : ops) {
+        float dx = cursor_pos.x - op.x;
+        float dy = cursor_pos.y - op.y;
+        if (dx * dx + dy * dy <= PORT_RADIUS * PORT_RADIUS * 4.0f) {
+          out_port = PortKind::OUTPUT;
+          return b;
+        }
       }
     }
 
-    if (b->type != BlockType::PORT_INPUT) {
-      Vector2 ip = b->calculate_input_port();
-      float dx = cursor_pos.x - ip.x;
-      float dy = cursor_pos.y - ip.y;
-      if (dx * dx + dy * dy <= PORT_RADIUS * PORT_RADIUS * 4.0f) {
-        out_port = PortKind::INPUT;
-        return b;
+    if (definition->num_inputs > 0) {
+      auto ips = b->calculate_input_ports();
+      for (auto ip : ips) {
+        float dx = cursor_pos.x - ip.x;
+        float dy = cursor_pos.y - ip.y;
+        if (dx * dx + dy * dy <= PORT_RADIUS * PORT_RADIUS * 4.0f) {
+          out_port = PortKind::INPUT;
+          return b;
+        }
       }
     }
   }
   return nullptr;
 }
 
-bool Graph::update(const Camera2D &camera) {
-  bool inference_pressed = false;
+void Graph::update(const Camera2D &camera) {
   Vector2 mouse_screen = GetMousePosition();
   Vector2 mouse_world = GetScreenToWorld2D(mouse_screen, camera);
 
-  Rectangle inference_rect = {(float)GetScreenWidth() - 160, 20, 140, 50};
-  if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) &&
-      CheckCollisionPointRec(mouse_screen, inference_rect)) {
-    inference_pressed = true;
+  PortKind kind;
+  auto *hovered_block = find_block_at(mouse_world);
+  auto *hovered_port = find_port_at(mouse_world, kind);
+  if (hovered_block != NULL) {
+    SetMouseCursor(MOUSE_CURSOR_POINTING_HAND);
+  } else if (hovered_port != NULL) {
+    SetMouseCursor(MOUSE_CURSOR_CROSSHAIR);
+  } else {
+    SetMouseCursor(MOUSE_CURSOR_DEFAULT);
   }
 
-  if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && !inference_pressed) {
+  if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
     if (this->input_state->active_block != nullptr) {
       reset_input_state(*this->input_state);
     }
@@ -195,13 +268,14 @@ bool Graph::update(const Camera2D &camera) {
       connection_state.from_block = port_block;
       connection_state.from_port = clicked_port;
       connection_state.active = true;
-      return inference_pressed;
+      return;
     }
 
     bool clicked_field = false;
     Block *clicked = find_block_at(mouse_world);
-    if (!clicked)
-      return inference_pressed;
+    if (!clicked) {
+      return;
+    }
     Block &b = *clicked;
 
     float field_y = b.position.y + FIELD_START_H;
@@ -242,6 +316,11 @@ bool Graph::update(const Camera2D &camera) {
   }
 
   if (IsMouseButtonPressed(MOUSE_RIGHT_BUTTON)) {
+    Block *clicked = find_block_at(mouse_world);
+    if (clicked != NULL) {
+      remove_block(clicked);
+    }
+
     PortKind clicked_port;
     Block *port_block = find_port_at(mouse_world, clicked_port);
     if (port_block) {
@@ -338,7 +417,6 @@ bool Graph::update(const Camera2D &camera) {
     }
   }
 
-  // ── Block dragging ──────────────────────────────────────────────────────
   if (this->dragging && IsMouseButtonDown(MOUSE_LEFT_BUTTON)) {
     Block &b = *this->dragged_block;
     b.position.x = mouse_world.x - this->drag_offset.x;
@@ -348,27 +426,6 @@ bool Graph::update(const Camera2D &camera) {
   if (this->dragging && IsMouseButtonReleased(MOUSE_LEFT_BUTTON)) {
     this->dragging = false;
     this->dragged_block = nullptr;
-  }
-
-  return inference_pressed;
-}
-
-void draw_ui(const Graph &graph) {
-  Rectangle inference_rect = {(float)GetScreenWidth() - 200, 20, 180, 50};
-  bool hover = CheckCollisionPointRec(GetMousePosition(), inference_rect);
-
-  DrawRectangleRounded(inference_rect, 0.3f, 6,
-                       hover ? COLOR_INFERENCE_HOVER : COLOR_INFERENCE);
-  DrawRectangleRoundedLinesEx(inference_rect, 0.3f, 6, 2.0f, BLACK);
-
-  const char *inference_text = "INFERENCE";
-  int tw = MeasureText(inference_text, 24);
-  DrawText(inference_text,
-           inference_rect.x + (inference_rect.width - tw) / 2.0f,
-           inference_rect.y + 13, 24, WHITE);
-
-  if (graph.inference_ran) {
-    DrawText("Inference complete!", GetScreenWidth() - 200, 80, 18, DARKGREEN);
   }
 }
 
