@@ -1,9 +1,29 @@
 #include "raylib.h"
+#include "ui/block.h"
+#include <memory>
 #include <vector>
 
 #pragma once
 #ifndef TOOLBAR_H
 #define TOOLBAR_H
+
+struct LibraryOperator {
+  Rectangle rect;
+  BlockDefinition &definition;
+};
+
+class Library {
+
+private:
+  Rectangle rect;
+  std::vector<LibraryOperator> operators;
+
+public:
+  Library(const Vector2 position, const float width, const float height);
+
+  void draw();
+  std::string handle_click();
+};
 
 enum class ToolbarButtonType { POINTER, LIBRARY, DEBUG, INFERENCE };
 
@@ -16,7 +36,7 @@ class ToolbarButton {
 
 private:
   Rectangle rect;
-  const char *text;
+  int icon_id;
   const ToolbarButtonType type;
 
 public:
@@ -26,6 +46,7 @@ public:
 };
 
 class Toolbar {
+
 private:
   std::vector<ToolbarButton> buttons;
   float height;
@@ -33,9 +54,12 @@ private:
   Vector2 position;
 
 public:
+  bool show_library = false;
+  std::unique_ptr<Library> library;
+
   Toolbar(const Vector2 position, const float button_size);
   void draw();
-  void handle_click();
+  int handle_click();
 };
 
 #endif
