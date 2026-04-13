@@ -1,6 +1,7 @@
 #include "raylib.h"
 #include "ui/block.h"
 #include <memory>
+#include <vector>
 
 #pragma once
 #ifndef GRAPH_H
@@ -12,6 +13,7 @@ private:
 
   Block *find_block_at(Vector2 cursor_pos);
   Block *find_port_at(Vector2 cursor_pos, PortKind &out_port);
+  void draw_grid(const Camera2D &camera);
 
 public:
   std::vector<std::unique_ptr<Block>> blocks;
@@ -28,15 +30,18 @@ public:
   bool topology_dirty;
   Vector2 drag_offset;
 
-  Graph(const int shape);
+  Graph(const size_t shape);
 
+  int count_blocks_with_type(std::string type);
+  void push_block(Block *block);
+  void remove_block(Block *block);
   void connect(Block *parent, Block *child);
   void disconnect(Block *parent, Block *child);
 
   void inference();
   void draw(const Camera2D &camera);
+  void update(const Camera2D &camera);
   bool ready();
-  bool update(const Camera2D &camera);
 
 private:
   void refresh_orphans();
