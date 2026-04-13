@@ -5,11 +5,41 @@
 #include "ui/block.h"
 #include "ui/graph.h"
 #include "ui/toolbar.h"
-#include <onnxruntime_cxx_api.h>
+
+void do_library_action(Graph &graph, Toolbar &toolbar, const std::string &op,
+                       const size_t shape) {
+  if (op.empty()) {
+    return;
+  }
+  std::string label =
+      graph.count_blocks_with_type(op) > 0
+          ? op + " " + std::to_string(graph.count_blocks_with_type(op))
+          : op;
+  graph.push_block(new Block(op, label, Vector2{400.0f, 400.0f}, shape));
+  toolbar.show_library = false;
+}
+
+void do_toolbar_action(ROMLL &romll, Graph &graph, Toolbar &toolbar,
+                       const int action) {
+  if (action == -1) {
+    return;
+  }
+  switch ((ToolbarButtonType)action) {
+  case ToolbarButtonType::POINTER:
+    break;
+  case ToolbarButtonType::LIBRARY:
+    toolbar.show_library = !toolbar.show_library;
+  case ToolbarButtonType::DEBUG:
+    break;
+  case ToolbarButtonType::INFERENCE:
+    romll.run_inference();
+    if (graph.input_state->active_block != nullptr) {
+      reset_input_state(*graph.input_state);
+    }
+  }
+}
 
 int main() {
-  auto start = std::chrono::high_resolution_clock::now();
-
   struct raylib_config config = {
       .window_height = 800,
       .window_width = 1200,
@@ -21,7 +51,8 @@ int main() {
   Camera2D camera = {};
   camera.zoom = 1.0f;
 
-  Graph graph = Graph(4);
+  size_t shape = 4; // TODO: Initialize by user
+  Graph graph = Graph(shape);
   ROMLL romll = ROMLL(graph);
   size_t offset_x =
       (std::size(all_types) / 2) * (TOOLBAR_BUTTON_SIZE + TOOLBAR_PADDING);
@@ -30,67 +61,57 @@ int main() {
                              float(config.window_height - offset_y)},
                             TOOLBAR_BUTTON_SIZE);
 
-  auto ready = std::chrono::high_resolution_clock::now();
-  printf("Startup: %.2f ms\n",
-         std::chrono::duration<double, std::milli>(ready - start).count());
+  while (!WindowShouldClose()) {
+    graph.update(camera);
 
-  // while (!WindowShouldClose()) {
-  //   bool inference_pressed = graph.update(camera);
-  //   toolbar.handle_click();
-  //
-  //   if (inference_pressed) {
-  //     romll.run_inference();
-  //
-  //     if (graph.input_state->active_block != nullptr) {
-  //       reset_input_state(*graph.input_state);
-  //     }
-  //   }
-  //   if (!graph.dragging && !graph.connection_state.active &&
-  //       graph.input_state->active_block == nullptr &&
-  //       (IsMouseButtonDown(MOUSE_BUTTON_LEFT) ||
-  //        IsMouseButtonDown(MOUSE_BUTTON_MIDDLE))) {
-  //     Vector2 delta = GetMouseDelta();
-  //     delta = Vector2Scale(delta, -1.0f / camera.zoom);
-  //     camera.target = Vector2Add(camera.target, delta);
-  //   }
-  //
-  //   float wheel = GetMouseWheelMove();
-  //   if (IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL) ||
-  //       IsKeyDown(KEY_LEFT_SUPER)) {
-  //     if (wheel != 0) {
-  //       Vector2 mouseWorldPos = GetScreenToWorld2D(GetMousePosition(),
-  //       camera); camera.offset = GetMousePosition(); camera.target =
-  //       mouseWorldPos; float scale = 0.1f * wheel; camera.zoom =
-  //       Clamp(expf(logf(camera.zoom) + scale), 0.125f, 64.0f);
-  //     }
-  //   }
-  //
-  //   BeginDrawing();
-  //   ClearBackground(RAYWHITE);
-  //   BeginMode2D(camera);
-  //
-  //   rlPushMatrix();
-  //   rlTranslatef(0, 25 * 50, 0);
-  //   rlRotatef(90, 1, 0, 0);
-  //   DrawGrid(100, 50);
-  //   rlPopMatrix();
-  //
-  //   graph.draw(camera);
-  //
-  //   EndMode2D();
-  //
-  //   toolbar.draw();
-  //   draw_ui(graph);
-  //
-  //   DrawText(
-  //       "Left og middle mouse drag to pan. Ctrl+Scroll to zoom. Drag blocks
-  //       to " "reposition.", 20, 22, 18, GRAY);
-  //
-  //   DrawCircleV(GetMousePosition(), 3, DARKGRAY);
-  //
-  //   EndDrawing();
-  // }
+    if (toolbar.show_library) {
+      std::string library_action = toolbar.library->handle_click();
+      do_library_action(graph, toolbar, library_action, shape);
+    }
 
-  // CloseWindow();
+    int toolbar_action = toolbar.handle_click();
+    do_toolbar_action(romll, graph, toolbar, toolbar_action);
+
+    if (!graph.dragging && !graph.connection_state.active &&
+        graph.input_state->active_block == nullptr &&
+        (IsMouseButtonDown(MOUSE_BUTTON_LEFT) ||
+         IsMouseButtonDown(MOUSE_BUTTON_MIDDLE))) {
+      Vector2 delta = GetMouseDelta();
+      delta = Vector2Scale(delta, -1.0f / camera.zoom);
+      camera.target = Vector2Add(camera.target, delta);
+    }
+
+    float wheel = GetMouseWheelMove();
+    if (IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL) ||
+        IsKeyDown(KEY_LEFT_SUPER)) {
+      if (wheel != 0) {
+        camera.offset = GetMousePosition();
+        Vector2 mouseWorldPos = GetScreenToWorld2D(GetMousePosition(), camera);
+        camera.target = mouseWorldPos;
+        float scale = 0.1f * wheel;
+        camera.zoom = Clamp(expf(logf(camera.zoom) + scale), 0.125f, 64.0f);
+      }
+    }
+
+    BeginDrawing();
+    ClearBackground(RAYWHITE);
+    BeginMode2D(camera);
+
+    graph.draw(camera);
+
+    EndMode2D();
+
+    toolbar.draw();
+
+    DrawText(
+        "Left og middle mouse drag to pan. Ctrl+Scroll to zoom. Drag blocks to "
+        "reposition.",
+        20, 22, 18, GRAY);
+    DrawCircleV(GetMousePosition(), 3, DARKGRAY);
+
+    EndDrawing();
+  }
+
+  CloseWindow();
   return 0;
 }
