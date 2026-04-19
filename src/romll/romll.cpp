@@ -38,7 +38,6 @@ onnx::ModelProto ROMLL::parse_ui_graph(const Graph &graph) {
 
   while (!queue.empty()) {
     Block *current = queue.front();
-    printf("Processing block: %s\n", current->label.c_str());
     queue.pop_front();
 
     if (current->definition->name == "PortInput") {
@@ -56,6 +55,8 @@ onnx::ModelProto ROMLL::parse_ui_graph(const Graph &graph) {
       node->set_name(current->label.c_str());
       node->set_op_type(current->definition->name.c_str());
       for (size_t i = 0; i < current->inputs.size(); i++) {
+        printf("Input of %s: %s\n", current->label.c_str(),
+               current->inputs[i].block->label.c_str());
         node->add_input(current->inputs[i].block->label.c_str());
       }
       if (current->outputs.size() > 0 &&
@@ -67,6 +68,8 @@ onnx::ModelProto ROMLL::parse_ui_graph(const Graph &graph) {
     }
 
     for (auto child : current->outputs) {
+      printf("Child of %s: %s, on index: %zu\n", current->label.c_str(),
+             child.block->label.c_str(), child.port_index);
       if (visited.insert(child.block).second) {
         queue.push_back(child.block);
       }
@@ -80,10 +83,13 @@ void ROMLL::rebuild_session() {
   onnx_model = serialize(parse_ui_graph(graph));
   session = Ort::Session(env, onnx_model.data(), onnx_model.size(),
                          Ort::SessionOptions{nullptr});
+  input_names.clear();
+  output_names.clear();
   for (auto *root : graph.roots)
     input_names.push_back(root->label.c_str());
   for (auto *leaf : graph.leafs)
     output_names.push_back(leaf->label.c_str());
+
   graph.topology_dirty = false;
 }
 
@@ -136,8 +142,8 @@ std::vector<Ort::Value> ROMLL::run_model(const Ort::RunOptions &options) {
   }
 
   auto output_tensors =
-      session.Run(options, input_names.data(), input_tensors.data(), 1,
-                  output_names.data(), 1);
+      session.Run(options, input_names.data(), input_tensors.data(),
+                  input_names.size(), output_names.data(), output_names.size());
 
   return output_tensors;
 }
