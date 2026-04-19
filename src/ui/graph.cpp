@@ -24,8 +24,7 @@ Graph::Graph(const size_t shape)
   Block *output_block = blocks[1].get();
   Block *relu_block = blocks[2].get();
 
-  this->roots = {input_block}; // TODO: This needs to be refactored, as we can
-                               // have more than one root, duh...
+  this->roots = {input_block};
   this->leafs = {output_block};
 
   connect(input_block, relu_block, 0, 0);
@@ -67,21 +66,22 @@ void Graph::push_block(Block *block) {
 }
 
 void Graph::remove_block(Block *block) {
-  for (auto prev : block->inputs) {
-    auto &n = prev.block->inputs;
-    n.erase(std::remove_if(
-                n.begin(), n.end(),
-                [block](const Connection &c) { return c.block == block; }),
-            n.end());
+  for (auto input : block->inputs) {
+    auto &connections = input.block->outputs;
+    connections.erase(std::remove_if(connections.begin(), connections.end(),
+                                     [block](const Connection &c) {
+                                       return c.block == block;
+                                     }),
+                      connections.end());
   }
-  for (auto nxt : block->outputs) {
-    auto &p = nxt.block->inputs;
-    p.erase(std::remove_if(
-                p.begin(), p.end(),
-                [block](const Connection &c) { return c.block == block; }),
-            p.end());
+  for (auto output : block->outputs) {
+    auto &connections = output.block->inputs;
+    connections.erase(std::remove_if(connections.begin(), connections.end(),
+                                     [block](const Connection &c) {
+                                       return c.block == block;
+                                     }),
+                      connections.end());
   }
-
   auto it = std::find_if(blocks.begin(), blocks.end(),
                          [block](const auto &bp) { return bp.get() == block; });
 
