@@ -82,10 +82,10 @@ int main() {
     if (IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL) ||
         IsKeyDown(KEY_LEFT_SUPER)) {
       if (wheel != 0) {
-        camera.offset = GetMousePosition();
         Vector2 mouseWorldPos = GetScreenToWorld2D(GetMousePosition(), camera);
+        camera.offset = GetMousePosition();
         camera.target = mouseWorldPos;
-        float scale = 0.05f * wheel;
+        float scale = 0.1f * wheel;
         camera.zoom = Clamp(expf(logf(camera.zoom) + scale), 0.125f, 64.0f);
       }
     }
