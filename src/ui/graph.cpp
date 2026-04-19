@@ -13,12 +13,14 @@ Graph::Graph(const size_t shape)
       topology_dirty(false) {
   // TODO: We will only push an output and input block.
 
-  blocks.push_back(std::make_unique<Block>("PortInput", "X",
+  blocks.push_back(std::make_unique<Block>("PortInput",
+                                           generate_block_label("PortInput"),
                                            Vector2{200.0f, 200.0f}, shape));
-  blocks.push_back(std::make_unique<Block>("PortOutput", " Y",
+  blocks.push_back(std::make_unique<Block>("PortOutput",
+                                           generate_block_label("PortOutput"),
                                            Vector2{800.0f, 200.0f}, shape));
-  blocks.push_back(
-      std::make_unique<Block>("Relu", "Relu", Vector2{450.0f, 400.0f}, shape));
+  blocks.push_back(std::make_unique<Block>("Relu", generate_block_label("Relu"),
+                                           Vector2{450.0f, 400.0f}, shape));
 
   Block *input_block = blocks[0].get();
   Block *output_block = blocks[1].get();
@@ -36,6 +38,18 @@ Graph::Graph(const size_t shape)
   refresh_orphans();
 }
 
+std::string Graph::generate_block_label(const std::string op) {
+  int count = 0;
+  std::string label = op + " " + std::to_string(count);
+
+  while (block_label_exists(label)) {
+    count++;
+    label = op + " " + std::to_string(count);
+  }
+
+  return label;
+}
+
 int Graph::count_blocks_with_type(const std::string type) {
   int count = 0;
   for (const auto &bp : blocks) {
@@ -49,6 +63,20 @@ int Graph::count_blocks_with_type(const std::string type) {
     }
   }
   return count;
+}
+
+bool Graph::block_label_exists(const std::string &label) {
+  for (const auto &bp : blocks) {
+    if (bp->label == label) {
+      return true;
+    }
+  }
+  for (const auto &orphan : orphans) {
+    if (orphan->label == label) {
+      return true;
+    }
+  }
+  return false;
 }
 
 void Graph::push_block(Block *block) {

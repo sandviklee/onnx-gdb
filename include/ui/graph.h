@@ -14,6 +14,8 @@ private:
   Block *find_block_at(Vector2 cursor_pos);
   Connection find_port_at(Vector2 cursor_pos, PortKind &out_port);
   void draw_grid(const Camera2D &camera);
+  int count_blocks_with_type(std::string type);
+  bool block_label_exists(const std::string &label);
 
 public:
   std::vector<std::unique_ptr<Block>> blocks;
@@ -31,7 +33,7 @@ public:
 
   Graph(const size_t shape);
 
-  int count_blocks_with_type(std::string type);
+  std::string generate_block_label(const std::string op);
   void push_block(Block *block);
   void remove_block(Block *block);
   void connect(Block *parent, Block *child, const size_t out_port_index,

@@ -11,11 +11,8 @@ void do_library_action(Graph &graph, Toolbar &toolbar, const std::string &op,
   if (op.empty()) {
     return;
   }
-  std::string label =
-      graph.count_blocks_with_type(op) > 0
-          ? op + " " + std::to_string(graph.count_blocks_with_type(op))
-          : op;
-  graph.push_block(new Block(op, label, Vector2{400.0f, 400.0f}, shape));
+  graph.push_block(new Block(op, graph.generate_block_label(op),
+                             Vector2{400.0f, 400.0f}, shape));
   toolbar.show_library = false;
 }
 
@@ -88,7 +85,7 @@ int main() {
         camera.offset = GetMousePosition();
         Vector2 mouseWorldPos = GetScreenToWorld2D(GetMousePosition(), camera);
         camera.target = mouseWorldPos;
-        float scale = 0.1f * wheel;
+        float scale = 0.05f * wheel;
         camera.zoom = Clamp(expf(logf(camera.zoom) + scale), 0.125f, 64.0f);
       }
     }
