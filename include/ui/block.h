@@ -36,6 +36,11 @@ inline std::unordered_map<std::string, BlockDefinition> BLOCK_REGISTRY = {
 };
 enum class PortKind { INPUT, OUTPUT };
 
+struct Connection {
+  Block *block;
+  size_t port_index;
+};
+
 class Block {
   friend class Graph;
 
@@ -52,7 +57,7 @@ public:
   bool has_results;
   std::string label;
 
-  Block(const std::string &definition, const std::string &label,
+  Block(const std::string &name, const std::string &label,
         const Vector2 &position, const int shape);
 
   std::vector<Vector2> calculate_input_ports();
@@ -60,12 +65,12 @@ public:
 
   void draw(const InputFieldState &input_state);
 
-  std::vector<Block *> next;
-  std::vector<Block *> previous;
+  std::vector<Connection> inputs;
+  std::vector<Connection> outputs;
 };
 
 struct ConnectionState {
-  Block *from_block = nullptr;
+  Connection connection;
   PortKind from_port = PortKind::OUTPUT;
   bool active = false;
 };

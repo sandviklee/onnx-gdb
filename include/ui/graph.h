@@ -12,20 +12,19 @@ private:
   Block *dragged_block;
 
   Block *find_block_at(Vector2 cursor_pos);
-  Block *find_port_at(Vector2 cursor_pos, PortKind &out_port);
+  Connection find_port_at(Vector2 cursor_pos, PortKind &out_port);
   void draw_grid(const Camera2D &camera);
 
 public:
   std::vector<std::unique_ptr<Block>> blocks;
-
-  Block *root;
-  Block *leaf;
-
   std::vector<Block *> orphans;
 
+  std::vector<Block *> roots;
+  std::vector<Block *> leafs;
+
   std::unique_ptr<InputFieldState> input_state;
-  ConnectionState connection_state;
   bool inference_ran;
+  ConnectionState connection_state;
   bool dragging;
   bool topology_dirty;
   Vector2 drag_offset;
@@ -35,7 +34,8 @@ public:
   int count_blocks_with_type(std::string type);
   void push_block(Block *block);
   void remove_block(Block *block);
-  void connect(Block *parent, Block *child);
+  void connect(Block *parent, Block *child, const size_t out_port_index,
+               const size_t in_port_index);
   void disconnect(Block *parent, Block *child);
 
   void inference();

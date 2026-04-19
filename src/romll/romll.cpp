@@ -9,10 +9,10 @@ ROMLL::ROMLL(Graph &graph)
       session(Ort::Session(env, onnx_model.data(), onnx_model.size(),
                            Ort::SessionOptions{nullptr})),
       graph(graph) {
-  input_data = graph.root->values;
-  input_shape = {(int64_t)input_data.size()};
-  input_names = {const_cast<char *>(graph.root->definition->name.c_str())};
-  output_names = {const_cast<char *>(graph.leaf->definition->name.c_str())};
+  for (auto *root : graph.roots)
+    input_names.push_back(root->label.c_str());
+  for (auto *leaf : graph.leafs)
+    output_names.push_back(leaf->label.c_str());
 };
 
 onnx::ModelProto initialize_onnx_model() {
@@ -33,12 +33,12 @@ onnx::ModelProto ROMLL::parse_ui_graph(const Graph &graph) {
   onnx_graph->set_name(
       "main graph"); // TODO: Look at the reasoning for defining graph names
 
-  std::unordered_set<Block *> visited;
-  std::deque<Block *> queue = {graph.root};
-  visited.insert(graph.root);
+  std::deque<Block *> queue(graph.roots.begin(), graph.roots.end());
+  std::unordered_set<Block *> visited(graph.roots.begin(), graph.roots.end());
 
   while (!queue.empty()) {
     Block *current = queue.front();
+    printf("Processing block: %s\n", current->label.c_str());
     queue.pop_front();
 
     if (current->definition->name == "PortInput") {
@@ -55,20 +55,20 @@ onnx::ModelProto ROMLL::parse_ui_graph(const Graph &graph) {
       auto *node = onnx_graph->add_node();
       node->set_name(current->label.c_str());
       node->set_op_type(current->definition->name.c_str());
-      for (size_t i = 0; i < current->previous.size(); i++) {
-        node->add_input(current->previous[i]->label.c_str());
+      for (size_t i = 0; i < current->inputs.size(); i++) {
+        node->add_input(current->inputs[i].block->label.c_str());
       }
-      if (current->next.size() > 0 &&
-          current->next[0]->definition->name == "PortOutput") {
-        node->add_output(current->next[0]->label.c_str());
+      if (current->outputs.size() > 0 &&
+          current->outputs[0].block->definition->name == "PortOutput") {
+        node->add_output(current->outputs[0].block->label.c_str());
       } else {
         node->add_output(current->label.c_str());
       }
     }
 
-    for (auto *child : current->next) {
-      if (visited.insert(child).second) {
-        queue.push_back(child);
+    for (auto child : current->outputs) {
+      if (visited.insert(child.block).second) {
+        queue.push_back(child.block);
       }
     }
   }
@@ -80,40 +80,38 @@ void ROMLL::rebuild_session() {
   onnx_model = serialize(parse_ui_graph(graph));
   session = Ort::Session(env, onnx_model.data(), onnx_model.size(),
                          Ort::SessionOptions{nullptr});
-  output_names = {const_cast<char *>(graph.leaf->label.c_str())};
-  input_names = {const_cast<char *>(graph.root->label.c_str())};
+  for (auto *root : graph.roots)
+    input_names.push_back(root->label.c_str());
+  for (auto *leaf : graph.leafs)
+    output_names.push_back(leaf->label.c_str());
   graph.topology_dirty = false;
 }
 
 void ROMLL::run_inference() {
-  // TODO: Should return error code and show error in GUI.
   try {
     if (graph.topology_dirty) {
       rebuild_session();
     }
-
-    input_data = graph.root->values;
-    input_shape = {(int64_t)input_data.size()};
-
     Ort::RunOptions run_options{nullptr};
-    std::vector<Ort::Value> output = run_model(run_options);
-    Ort::TensorTypeAndShapeInfo info = output[0].GetTensorTypeAndShapeInfo();
-    std::vector<int64_t> shape = info.GetShape();
-    float *data = output[0].GetTensorMutableData<float>();
-    int64_t size = input_shape[0];
+    std::vector<Ort::Value> outputs = run_model(run_options);
 
-    graph.root->values.resize(size);
-    for (int64_t i = 0; i < size; i++) {
-      std::cout << "Output value " << i << ": " << data[i] << std::endl;
-      graph.leaf->values[i] = data[i];
+    for (size_t i = 0; i < outputs.size(); i++) {
+      auto info = outputs[i].GetTensorTypeAndShapeInfo();
+      auto shape = info.GetShape();
+      float *data = outputs[i].GetTensorMutableData<float>();
+      int64_t size = info.GetElementCount();
+
+      graph.leafs[i]->values.resize(size);
+      for (int64_t j = 0; j < size; j++) {
+        graph.leafs[i]->values[j] = data[j];
+      }
+      graph.leafs[i]->has_results = true;
     }
-    graph.leaf->has_results = true;
     graph.inference_ran = true;
-
   } catch (const Ort::Exception &e) {
     std::cerr << "ONNX Runtime error: " << e.what() << std::endl;
   }
-};
+}
 
 std::string ROMLL::serialize(const onnx::ModelProto &model) {
   std::string serialized_model;
@@ -127,12 +125,19 @@ void ROMLL::save_model(const onnx::ModelProto &model, const std::string &path) {
 };
 
 std::vector<Ort::Value> ROMLL::run_model(const Ort::RunOptions &options) {
-  Ort::Value input_tensor = Ort::Value::CreateTensor(
-      memory_info, input_data.data(), input_data.size(), input_shape.data(),
-      input_shape.size());
+  std::vector<Ort::Value> input_tensors;
 
-  auto output_tensors = session.Run(options, input_names.data(), &input_tensor,
-                                    1, output_names.data(), 1);
+  for (auto *root : graph.roots) {
+    auto &data = root->values;
+    std::vector<int64_t> shape = {(int64_t)data.size()};
+
+    input_tensors.push_back(Ort::Value::CreateTensor(
+        memory_info, data.data(), data.size(), shape.data(), shape.size()));
+  }
+
+  auto output_tensors =
+      session.Run(options, input_names.data(), input_tensors.data(), 1,
+                  output_names.data(), 1);
 
   return output_tensors;
 }

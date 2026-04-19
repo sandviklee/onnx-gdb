@@ -2,10 +2,10 @@
 #include <cstdio>
 #include <cstring>
 
-Block::Block(const std::string &definition, const std::string &label,
+Block::Block(const std::string &name, const std::string &label,
              const Vector2 &position, const int shape)
-    : definition(&BLOCK_REGISTRY.at(definition)), position(position),
-      label(label) {
+    : definition(&BLOCK_REGISTRY.at(name)), position(position), label(label),
+      inputs(), outputs() {
   for (int i = 0; i < shape; i++) {
     values.push_back(0.0f);
   }

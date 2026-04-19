@@ -11,8 +11,8 @@ private:
   std::string onnx_model = "";
   std::vector<float> input_data;
   std::vector<int64_t> input_shape;
-  std::vector<char *> input_names;
-  std::vector<char *> output_names;
+  std::vector<const char *> input_names;
+  std::vector<const char *> output_names;
   Ort::Env env;
   Ort::MemoryInfo memory_info;
   Ort::Session session{nullptr};

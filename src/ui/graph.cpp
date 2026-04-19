@@ -1,5 +1,6 @@
 #include "ui/graph.h"
 #include "raylib.h"
+#include "ui/block.h"
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
@@ -8,8 +9,8 @@
 #include <unordered_set>
 
 Graph::Graph(const size_t shape)
-    : dragged_block(nullptr), root(nullptr), leaf(nullptr),
-      inference_ran(false), dragging(false), topology_dirty(false) {
+    : dragged_block(nullptr), inference_ran(false), dragging(false),
+      topology_dirty(false) {
   // TODO: We will only push an output and input block.
 
   blocks.push_back(std::make_unique<Block>("PortInput", "X",
@@ -23,11 +24,12 @@ Graph::Graph(const size_t shape)
   Block *output_block = blocks[1].get();
   Block *relu_block = blocks[2].get();
 
-  this->root = input_block;
-  this->leaf = output_block;
+  this->roots = {input_block}; // TODO: This needs to be refactored, as we can
+                               // have more than one root, duh...
+  this->leafs = {output_block};
 
-  connect(input_block, relu_block);
-  connect(relu_block, output_block);
+  connect(input_block, relu_block, 0, 0);
+  connect(relu_block, output_block, 0, 0);
 
   InputFieldState input_state_val = InputFieldState{};
 
@@ -52,63 +54,92 @@ int Graph::count_blocks_with_type(const std::string type) {
 
 void Graph::push_block(Block *block) {
   blocks.push_back(std::unique_ptr<Block>(block));
+  if (block->definition->name == "PortInput") {
+    roots.push_back(block);
+  }
+
+  if (block->definition->name == "PortOutput") {
+    leafs.push_back(block);
+  }
+
+  topology_dirty = true;
   refresh_orphans();
 }
 
 void Graph::remove_block(Block *block) {
-  for (auto *prev : block->previous) {
-    auto &n = prev->next;
-    n.erase(std::remove(n.begin(), n.end(), block), n.end());
+  for (auto prev : block->inputs) {
+    auto &n = prev.block->inputs;
+    n.erase(std::remove_if(
+                n.begin(), n.end(),
+                [block](const Connection &c) { return c.block == block; }),
+            n.end());
   }
-  for (auto *nxt : block->next) {
-    auto &p = nxt->previous;
-    p.erase(std::remove(p.begin(), p.end(), block), p.end());
+  for (auto nxt : block->outputs) {
+    auto &p = nxt.block->inputs;
+    p.erase(std::remove_if(
+                p.begin(), p.end(),
+                [block](const Connection &c) { return c.block == block; }),
+            p.end());
   }
 
   auto it = std::find_if(blocks.begin(), blocks.end(),
                          [block](const auto &bp) { return bp.get() == block; });
+
+  if (it->get()->definition->name == "PortInput") {
+    roots.erase(std::remove(roots.begin(), roots.end(), block), roots.end());
+  }
+  if (it->get()->definition->name == "PortOutput") {
+    leafs.erase(std::remove(leafs.begin(), leafs.end(), block), leafs.end());
+  }
   if (it != blocks.end()) {
     blocks.erase(it);
   }
+
+  topology_dirty = true;
   refresh_orphans();
 }
 
-void Graph::connect(Block *parent, Block *child) {
-  for (auto *c : parent->next) {
-    if (c == child)
+void Graph::connect(Block *parent, Block *child, const size_t out_port_index,
+                    const size_t in_port_index) {
+  for (auto c : parent->inputs) {
+    if (c.block == child)
       return;
   }
-  parent->next.push_back(child);
-  child->previous.push_back(parent);
+  parent->outputs.push_back({child, out_port_index});
+  child->inputs.push_back({parent, in_port_index});
   topology_dirty = true;
   refresh_orphans();
 }
 
 void Graph::disconnect(Block *parent, Block *child) {
-  parent->next.erase(
-      std::remove(parent->next.begin(), parent->next.end(), child),
-      parent->next.end());
-  child->previous.erase(
-      std::remove(child->previous.begin(), child->previous.end(), parent),
-      child->previous.end());
+  parent->outputs.erase(
+      std::remove_if(parent->outputs.begin(), parent->outputs.end(),
+                     [child](const Connection &c) { return c.block == child; }),
+      parent->outputs.end());
+  child->inputs.erase(std::remove_if(child->inputs.begin(), child->inputs.end(),
+                                     [parent](const Connection &c) {
+                                       return c.block == parent;
+                                     }),
+                      child->inputs.end());
   topology_dirty = true;
   refresh_orphans();
 }
 
 bool Graph::is_reachable_from_root(Block *block) {
-  if (root == nullptr)
+  if (roots.empty())
     return false;
-  std::unordered_set<Block *> visited;
-  std::deque<Block *> queue = {root};
-  visited.insert(root);
+
+  std::deque<Block *> queue(roots.begin(), roots.end());
+  std::unordered_set<Block *> visited(roots.begin(), roots.end());
+
   while (!queue.empty()) {
     Block *cur = queue.front();
     queue.pop_front();
     if (cur == block)
       return true;
-    for (auto *child : cur->next) {
-      if (visited.insert(child).second) {
-        queue.push_back(child);
+    for (auto child : cur->outputs) {
+      if (visited.insert(child.block).second) {
+        queue.push_back(child.block);
       }
     }
   }
@@ -119,7 +150,7 @@ void Graph::refresh_orphans() {
   orphans.clear();
   for (auto &bp : blocks) {
     Block *b = bp.get();
-    if (b == root)
+    if (std::find(roots.begin(), roots.end(), b) != roots.end())
       continue;
     if (!is_reachable_from_root(b)) {
       orphans.push_back(b);
@@ -151,26 +182,26 @@ void Graph::draw_grid(const Camera2D &camera) {
 void Graph::draw(const Camera2D &camera) {
   draw_grid(camera);
 
-  if (root) {
-    std::unordered_set<Block *> visited;
-    std::deque<Block *> queue = {root};
-    visited.insert(root);
+  if (!roots.empty()) {
+    std::deque<Block *> queue(roots.begin(), roots.end());
+    std::unordered_set<Block *> visited(roots.begin(), roots.end());
 
     while (!queue.empty()) {
-      Block *current = queue.front();
+      Block *curr = queue.front();
       queue.pop_front();
-      current->draw(*this->input_state);
-      current->height = current->calculate_height();
+      curr->draw(*this->input_state);
+      curr->height = curr->calculate_height();
 
-      size_t curr_child = 0;
-      for (auto *child : current->next) {
-        if (visited.insert(child).second) {
-          queue.push_back(child);
-          draw_wire(current->calculate_output_ports()
-                        [0], // TODO: If multiple output ports we need to
-                             // specify which child is connected to it.
-                    child->calculate_input_ports()[curr_child]);
-          curr_child++;
+      for (auto child : curr->outputs) {
+        if (visited.insert(child.block).second) {
+          queue.push_back(child.block);
+          size_t in_port_index =
+              std::find_if(
+                  child.block->inputs.begin(), child.block->inputs.end(),
+                  [curr](const Connection &c) { return c.block == curr; })
+                  ->port_index;
+          draw_wire(curr->calculate_output_ports()[child.port_index],
+                    child.block->calculate_input_ports()[in_port_index]);
         }
       }
     }
@@ -180,18 +211,23 @@ void Graph::draw(const Camera2D &camera) {
     orphan->draw(*this->input_state);
     orphan->height = orphan->calculate_height();
 
-    for (auto *child : orphan->next) {
-      draw_wire(orphan->calculate_output_ports()[0],
-                child->calculate_input_ports()[0]);
+    for (auto child : orphan->outputs) {
+      size_t in_port_index =
+          std::find_if(
+              child.block->inputs.begin(), child.block->inputs.end(),
+              [orphan](const Connection &c) { return c.block == orphan; })
+              ->port_index;
+      draw_wire(orphan->calculate_output_ports()[child.port_index],
+                child.block->calculate_input_ports()[in_port_index]);
     }
   }
 
-  if (connection_state.active && connection_state.from_block) {
+  if (connection_state.active && connection_state.connection.block) {
     Vector2 from;
     if (connection_state.from_port == PortKind::OUTPUT) {
-      from = connection_state.from_block->calculate_output_ports()[0];
+      from = connection_state.connection.block->calculate_output_ports()[0];
     } else {
-      from = connection_state.from_block->calculate_input_ports()[0];
+      from = connection_state.connection.block->calculate_input_ports()[0];
     }
     Vector2 mouse_world = GetScreenToWorld2D(GetMousePosition(), camera);
     draw_wire(from, mouse_world);
@@ -210,36 +246,37 @@ Block *Graph::find_block_at(Vector2 cursor_pos) {
   return nullptr;
 }
 
-Block *Graph::find_port_at(Vector2 cursor_pos, PortKind &out_port) {
+Connection Graph::find_port_at(Vector2 cursor_pos, PortKind &out_port) {
   for (auto &bp : blocks) {
     Block *b = bp.get();
     auto definition = b->definition;
 
     if (definition->num_outputs > 0) {
       auto ops = b->calculate_output_ports();
-      for (auto op : ops) {
-        float dx = cursor_pos.x - op.x;
-        float dy = cursor_pos.y - op.y;
+      for (size_t i = 0; i < ops.size(); i++) {
+        float dx = cursor_pos.x - ops[i].x;
+        float dy = cursor_pos.y - ops[i].y;
         if (dx * dx + dy * dy <= PORT_RADIUS * PORT_RADIUS * 4.0f) {
           out_port = PortKind::OUTPUT;
-          return b;
+          return {b, i};
         }
       }
     }
 
     if (definition->num_inputs > 0) {
       auto ips = b->calculate_input_ports();
-      for (auto ip : ips) {
-        float dx = cursor_pos.x - ip.x;
-        float dy = cursor_pos.y - ip.y;
+      for (size_t i = 0; i < ips.size(); i++) {
+        float dx = cursor_pos.x - ips[i].x;
+        float dy = cursor_pos.y - ips[i].y;
         if (dx * dx + dy * dy <= PORT_RADIUS * PORT_RADIUS * 4.0f) {
           out_port = PortKind::INPUT;
-          return b;
+          return {b, i};
         }
       }
     }
   }
-  return nullptr;
+
+  return {nullptr, 99};
 }
 
 void Graph::update(const Camera2D &camera) {
@@ -248,10 +285,10 @@ void Graph::update(const Camera2D &camera) {
 
   PortKind kind;
   auto *hovered_block = find_block_at(mouse_world);
-  auto *hovered_port = find_port_at(mouse_world, kind);
+  auto hovered_port = find_port_at(mouse_world, kind);
   if (hovered_block != NULL) {
     SetMouseCursor(MOUSE_CURSOR_POINTING_HAND);
-  } else if (hovered_port != NULL) {
+  } else if (hovered_port.block == NULL) {
     SetMouseCursor(MOUSE_CURSOR_CROSSHAIR);
   } else {
     SetMouseCursor(MOUSE_CURSOR_DEFAULT);
@@ -263,9 +300,10 @@ void Graph::update(const Camera2D &camera) {
     }
 
     PortKind clicked_port;
-    Block *port_block = find_port_at(mouse_world, clicked_port);
-    if (port_block) {
-      connection_state.from_block = port_block;
+    auto connection = find_port_at(mouse_world, clicked_port);
+    if (connection.block) {
+      connection_state.connection.block = connection.block;
+      connection_state.connection.port_index = connection.port_index;
       connection_state.from_port = clicked_port;
       connection_state.active = true;
       return;
@@ -322,17 +360,17 @@ void Graph::update(const Camera2D &camera) {
     }
 
     PortKind clicked_port;
-    Block *port_block = find_port_at(mouse_world, clicked_port);
+    Block *port_block = find_port_at(mouse_world, clicked_port).block;
     if (port_block) {
       if (clicked_port == PortKind::OUTPUT) {
-        auto children_copy = port_block->next;
-        for (auto *child : children_copy) {
-          disconnect(port_block, child);
+        auto children_copy = port_block->outputs;
+        for (auto child : children_copy) {
+          disconnect(port_block, child.block);
         }
       } else {
-        auto parents_copy = port_block->previous;
-        for (auto *parent : parents_copy) {
-          disconnect(parent, port_block);
+        auto parents_copy = port_block->inputs;
+        for (auto parent : parents_copy) {
+          disconnect(parent.block, port_block);
         }
       }
     }
@@ -340,20 +378,22 @@ void Graph::update(const Camera2D &camera) {
 
   if (connection_state.active && IsMouseButtonReleased(MOUSE_LEFT_BUTTON)) {
     PortKind target_port;
-    Block *target = find_port_at(mouse_world, target_port);
+    Connection target = find_port_at(mouse_world, target_port);
 
-    if (target && target != connection_state.from_block) {
+    if (target.block && target.block != connection_state.connection.block) {
       if (connection_state.from_port == PortKind::OUTPUT &&
           target_port == PortKind::INPUT) {
-        connect(connection_state.from_block, target);
+        connect(connection_state.connection.block, target.block,
+                connection_state.connection.port_index, target.port_index);
       } else if (connection_state.from_port == PortKind::INPUT &&
                  target_port == PortKind::OUTPUT) {
-        connect(target, connection_state.from_block);
+        connect(target.block, connection_state.connection.block,
+                target.port_index, connection_state.connection.port_index);
       }
     }
 
     connection_state.active = false;
-    connection_state.from_block = nullptr;
+    connection_state.connection.block = nullptr;
   }
 
   if (this->input_state->active_block != nullptr) {
