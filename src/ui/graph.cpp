@@ -84,7 +84,6 @@ void Graph::remove_block(Block *block) {
   }
   auto it = std::find_if(blocks.begin(), blocks.end(),
                          [block](const auto &bp) { return bp.get() == block; });
-
   if (it->get()->definition->name == "PortInput") {
     roots.erase(std::remove(roots.begin(), roots.end(), block), roots.end());
   }
@@ -94,7 +93,6 @@ void Graph::remove_block(Block *block) {
   if (it != blocks.end()) {
     blocks.erase(it);
   }
-
   topology_dirty = true;
   refresh_orphans();
 }
@@ -195,14 +193,15 @@ void Graph::draw(const Camera2D &camera) {
       for (auto child : curr->outputs) {
         if (visited.insert(child.block).second) {
           queue.push_back(child.block);
-          size_t in_port_index =
-              std::find_if(
-                  child.block->inputs.begin(), child.block->inputs.end(),
-                  [curr](const Connection &c) { return c.block == curr; })
-                  ->port_index;
-          draw_wire(curr->calculate_output_ports()[child.port_index],
-                    child.block->calculate_input_ports()[in_port_index]);
         }
+        size_t in_port_index =
+            std::find_if(
+                child.block->inputs.begin(), child.block->inputs.end(),
+                [curr](const Connection &c) { return c.block == curr; })
+                ->port_index;
+
+        draw_wire(curr->calculate_output_ports()[child.port_index],
+                  child.block->calculate_input_ports()[in_port_index]);
       }
     }
   }
@@ -252,11 +251,11 @@ Connection Graph::find_port_at(Vector2 cursor_pos, PortKind &out_port) {
     auto definition = b->definition;
 
     if (definition->num_outputs > 0) {
-      auto ops = b->calculate_output_ports();
-      for (size_t i = 0; i < ops.size(); i++) {
-        float dx = cursor_pos.x - ops[i].x;
-        float dy = cursor_pos.y - ops[i].y;
-        if (dx * dx + dy * dy <= PORT_RADIUS * PORT_RADIUS * 4.0f) {
+      auto out_ports = b->calculate_output_ports();
+      for (size_t i = 0; i < out_ports.size(); i++) {
+        float dx = cursor_pos.x - out_ports[i].x;
+        float dy = cursor_pos.y - out_ports[i].y;
+        if (dx * dx + dy * dy <= PORT_RADIUS * PORT_RADIUS) {
           out_port = PortKind::OUTPUT;
           return {b, i};
         }
@@ -264,11 +263,11 @@ Connection Graph::find_port_at(Vector2 cursor_pos, PortKind &out_port) {
     }
 
     if (definition->num_inputs > 0) {
-      auto ips = b->calculate_input_ports();
-      for (size_t i = 0; i < ips.size(); i++) {
-        float dx = cursor_pos.x - ips[i].x;
-        float dy = cursor_pos.y - ips[i].y;
-        if (dx * dx + dy * dy <= PORT_RADIUS * PORT_RADIUS * 4.0f) {
+      auto in_ports = b->calculate_input_ports();
+      for (size_t i = 0; i < in_ports.size(); i++) {
+        float dx = cursor_pos.x - in_ports[i].x;
+        float dy = cursor_pos.y - in_ports[i].y;
+        if (dx * dx + dy * dy <= PORT_RADIUS * PORT_RADIUS) {
           out_port = PortKind::INPUT;
           return {b, i};
         }
@@ -379,6 +378,10 @@ void Graph::update(const Camera2D &camera) {
   if (connection_state.active && IsMouseButtonReleased(MOUSE_LEFT_BUTTON)) {
     PortKind target_port;
     Connection target = find_port_at(mouse_world, target_port);
+
+    printf("target: %s, target_port: %zu\n",
+           target.block ? target.block->label.c_str() : "null",
+           target.port_index);
 
     if (target.block && target.block != connection_state.connection.block) {
       if (connection_state.from_port == PortKind::OUTPUT &&
