@@ -17,7 +17,7 @@ struct InputFieldState {
   int cursor = -1;
 };
 
-enum class BlockType { IO, ACTIVATION, MATH };
+enum class BlockType { IO, ACTIVATION, MATH, LAYER };
 
 struct BlockDefinition {
   std::string name;
@@ -27,10 +27,38 @@ struct BlockDefinition {
 };
 
 inline std::unordered_map<std::string, BlockDefinition> BLOCK_REGISTRY = {
+    // Math
     {"MatMul", {"MatMul", BlockType::MATH, 2, 1}},
     {"Add", {"Add", BlockType::MATH, 2, 1}},
+    {"Sub", {"Sub", BlockType::MATH, 2, 1}},
+    {"Mul", {"Mul", BlockType::MATH, 2, 1}},
+    {"Div", {"Div", BlockType::MATH, 2, 1}},
+    {"Pow", {"Pow", BlockType::MATH, 2, 1}},
+    {"Gemm", {"Gemm", BlockType::MATH, 3, 1}},
+    {"Abs", {"Abs", BlockType::MATH, 1, 1}},
+    {"Neg", {"Neg", BlockType::MATH, 1, 1}},
+    {"Exp", {"Exp", BlockType::MATH, 1, 1}},
+    {"Sqrt", {"Sqrt", BlockType::MATH, 1, 1}},
+    {"Log", {"Log", BlockType::MATH, 1, 1}},
+    // Activation
     {"Relu", {"Relu", BlockType::ACTIVATION, 1, 1}},
     {"Sigmoid", {"Sigmoid", BlockType::ACTIVATION, 1, 1}},
+    {"Tanh", {"Tanh", BlockType::ACTIVATION, 1, 1}},
+    {"LeakyRelu", {"LeakyRelu", BlockType::ACTIVATION, 1, 1}},
+    {"Elu", {"Elu", BlockType::ACTIVATION, 1, 1}},
+    {"Softmax", {"Softmax", BlockType::ACTIVATION, 1, 1}},
+    // Layer
+    {"Conv", {"Conv", BlockType::LAYER, 2, 1}},
+    {"MaxPool", {"MaxPool", BlockType::LAYER, 1, 1}},
+    {"AveragePool", {"AveragePool", BlockType::LAYER, 1, 1}},
+    {"GlobalAveragePool", {"GlobalAveragePool", BlockType::LAYER, 1, 1}},
+    {"BatchNormalization", {"BatchNormalization", BlockType::LAYER, 1, 1}},
+    {"Dropout", {"Dropout", BlockType::LAYER, 1, 1}},
+    {"Flatten", {"Flatten", BlockType::LAYER, 1, 1}},
+    {"Reshape", {"Reshape", BlockType::LAYER, 2, 1}},
+    {"Transpose", {"Transpose", BlockType::LAYER, 1, 1}},
+    {"Concat", {"Concat", BlockType::LAYER, 2, 1}},
+    // IO
     {"PortInput", {"PortInput", BlockType::IO, 0, 1}},
     {"PortOutput", {"PortOutput", BlockType::IO, 1, 0}},
 };
