@@ -62,6 +62,9 @@ void Block::draw(const InputFieldState &input_state) {
   case BlockType::ACTIVATION:
     block_color = GREEN;
     break;
+  case BlockType::LAYER:
+    block_color = VIOLET;
+    break;
   }
 
   DrawRectangleRounded({this->position.x, this->position.y, this->width, h},
