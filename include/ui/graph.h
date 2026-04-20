@@ -25,11 +25,15 @@ public:
   std::vector<Block *> leafs;
 
   std::unique_ptr<InputFieldState> input_state;
+  ShapePopupState shape_popup;
   bool inference_ran;
   ConnectionState connection_state;
   bool dragging;
   bool topology_dirty;
   Vector2 drag_offset;
+
+  double last_click_time = 0.0;
+  Block *last_click_block = nullptr;
 
   Graph(const size_t shape);
 
@@ -43,8 +47,11 @@ public:
 
   void inference();
   void draw(const Camera2D &camera);
+  void draw_popup();
   void update(const Camera2D &camera);
   bool ready();
+  bool popup_active() const;
+  void open_shape_popup(Block *b);
 
 private:
   void refresh_orphans();

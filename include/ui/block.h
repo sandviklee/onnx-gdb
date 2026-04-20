@@ -17,6 +17,12 @@ struct InputFieldState {
   int cursor = -1;
 };
 
+struct ShapePopupState {
+  Block *target = nullptr;
+  int pending_shape = 1;
+  bool active = false;
+};
+
 enum class BlockType { IO, ACTIVATION, MATH, LAYER };
 
 struct BlockDefinition {

@@ -6,13 +6,16 @@
 #include "ui/graph.h"
 #include "ui/toolbar.h"
 
-void do_library_action(Graph &graph, Toolbar &toolbar, const std::string &op,
-                       const size_t shape) {
+void do_library_action(Graph &graph, Toolbar &toolbar, const std::string &op) {
   if (op.empty()) {
     return;
   }
-  graph.push_block(new Block(op, graph.generate_block_label(op),
-                             Vector2{400.0f, 400.0f}, shape));
+  Block *b = new Block(op, graph.generate_block_label(op),
+                       Vector2{400.0f, 400.0f}, 1);
+  graph.push_block(b);
+  if (op == "PortInput") {
+    graph.open_shape_popup(b);
+  }
   toolbar.show_library = false;
 }
 
@@ -48,8 +51,7 @@ int main() {
   Camera2D camera = {};
   camera.zoom = 1.0f;
 
-  size_t shape = 4; // TODO: Initialize by user
-  Graph graph = Graph(shape);
+  Graph graph = Graph(4);
   ROMLL romll = ROMLL(graph);
   size_t offset_x =
       (std::size(all_types) / 2) * (TOOLBAR_BUTTON_SIZE + TOOLBAR_PADDING);
@@ -61,32 +63,34 @@ int main() {
   while (!WindowShouldClose()) {
     graph.update(camera);
 
-    if (toolbar.show_library) {
-      std::string library_action = toolbar.library->handle_click();
-      do_library_action(graph, toolbar, library_action, shape);
-    }
+    if (!graph.popup_active()) {
+      if (toolbar.show_library) {
+        std::string library_action = toolbar.library->handle_click();
+        do_library_action(graph, toolbar, library_action);
+      }
 
-    int toolbar_action = toolbar.handle_click();
-    do_toolbar_action(romll, graph, toolbar, toolbar_action);
+      int toolbar_action = toolbar.handle_click();
+      do_toolbar_action(romll, graph, toolbar, toolbar_action);
 
-    if (!graph.dragging && !graph.connection_state.active &&
-        graph.input_state->active_block == nullptr &&
-        (IsMouseButtonDown(MOUSE_BUTTON_LEFT) ||
-         IsMouseButtonDown(MOUSE_BUTTON_MIDDLE))) {
-      Vector2 delta = GetMouseDelta();
-      delta = Vector2Scale(delta, -1.0f / camera.zoom);
-      camera.target = Vector2Add(camera.target, delta);
-    }
+      if (!graph.dragging && !graph.connection_state.active &&
+          graph.input_state->active_block == nullptr &&
+          (IsMouseButtonDown(MOUSE_BUTTON_LEFT) ||
+           IsMouseButtonDown(MOUSE_BUTTON_MIDDLE))) {
+        Vector2 delta = GetMouseDelta();
+        delta = Vector2Scale(delta, -1.0f / camera.zoom);
+        camera.target = Vector2Add(camera.target, delta);
+      }
 
-    float wheel = GetMouseWheelMove();
-    if (IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL) ||
-        IsKeyDown(KEY_LEFT_SUPER)) {
-      if (wheel != 0) {
-        Vector2 mouseWorldPos = GetScreenToWorld2D(GetMousePosition(), camera);
-        camera.offset = GetMousePosition();
-        camera.target = mouseWorldPos;
-        float scale = 0.1f * wheel;
-        camera.zoom = Clamp(expf(logf(camera.zoom) + scale), 0.125f, 64.0f);
+      float wheel = GetMouseWheelMove();
+      if (IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL) ||
+          IsKeyDown(KEY_LEFT_SUPER)) {
+        if (wheel != 0) {
+          Vector2 mouseWorldPos = GetScreenToWorld2D(GetMousePosition(), camera);
+          camera.offset = GetMousePosition();
+          camera.target = mouseWorldPos;
+          float scale = 0.1f * wheel;
+          camera.zoom = Clamp(expf(logf(camera.zoom) + scale), 0.125f, 64.0f);
+        }
       }
     }
 
@@ -99,6 +103,7 @@ int main() {
     EndMode2D();
 
     toolbar.draw();
+    graph.draw_popup();
 
     DrawText(
         "Left og middle mouse drag to pan. Ctrl+Scroll to zoom. Drag blocks to "

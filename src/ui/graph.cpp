@@ -192,6 +192,117 @@ void Graph::refresh_orphans() {
 
 bool Graph::ready() { return true; }
 
+bool Graph::popup_active() const { return shape_popup.active; }
+
+void Graph::open_shape_popup(Block *b) {
+  shape_popup.target = b;
+  shape_popup.pending_shape = (int)b->values.size();
+  shape_popup.active = true;
+}
+
+void Graph::draw_popup() {
+  if (!shape_popup.active)
+    return;
+
+  int sw = GetScreenWidth();
+  int sh = GetScreenHeight();
+
+  DrawRectangle(0, 0, sw, sh, {0, 0, 0, 120});
+
+  const float pw = 300.0f, ph = 200.0f;
+  float px = (sw - pw) / 2.0f;
+  float py = (sh - ph) / 2.0f;
+
+  DrawRectangleRec({px, py, pw, ph}, {35, 35, 40, 255});
+  DrawRectangleLinesEx({px, py, pw, ph}, 1.5f, {70, 70, 75, 255});
+
+  DrawRectangleRec({px, py, pw, 40.0f}, {25, 25, 30, 255});
+  DrawText("Configure Input Shape", px + 12, py + 12, 15, WHITE);
+
+  std::string block_lbl = "Block: " + shape_popup.target->label;
+  DrawText(block_lbl.c_str(), px + 12, py + 52, 14, LIGHTGRAY);
+  DrawText("Number of input values:", px + 12, py + 74, 14, LIGHTGRAY);
+
+  const float btn_w = 34.0f, btn_h = 34.0f, cnt_w = 54.0f;
+  float controls_w = btn_w + cnt_w + btn_w + 8.0f;
+  float cx = px + (pw - controls_w) / 2.0f;
+  float cy = py + 104.0f;
+
+  Rectangle minus_r = {cx, cy, btn_w, btn_h};
+  Rectangle count_r = {cx + btn_w + 4, cy, cnt_w, btn_h};
+  Rectangle plus_r = {cx + btn_w + cnt_w + 8, cy, btn_w, btn_h};
+
+  Vector2 mouse = GetMousePosition();
+  bool minus_hov = CheckCollisionPointRec(mouse, minus_r);
+  bool plus_hov = CheckCollisionPointRec(mouse, plus_r);
+
+  DrawRectangleRec(minus_r, minus_hov ? Color{100, 100, 110, 255}
+                                      : Color{65, 65, 75, 255});
+  DrawRectangleLinesEx(minus_r, 1.0f, {90, 90, 100, 255});
+  DrawText("-", minus_r.x + (btn_w - MeasureText("-", 22)) / 2, cy + 5, 22,
+           WHITE);
+
+  DrawRectangleRec(count_r, {55, 55, 62, 255});
+  DrawRectangleLinesEx(count_r, 1.0f, {80, 80, 90, 255});
+  char cs[8];
+  snprintf(cs, sizeof(cs), "%d", shape_popup.pending_shape);
+  DrawText(cs, count_r.x + (cnt_w - MeasureText(cs, 20)) / 2, cy + 7, 20,
+           WHITE);
+
+  DrawRectangleRec(plus_r, plus_hov ? Color{100, 100, 110, 255}
+                                    : Color{65, 65, 75, 255});
+  DrawRectangleLinesEx(plus_r, 1.0f, {90, 90, 100, 255});
+  DrawText("+", plus_r.x + (btn_w - MeasureText("+", 22)) / 2, cy + 5, 22,
+           WHITE);
+
+  float bw = 90.0f, bh = 32.0f;
+  float by = py + ph - 46.0f;
+  Rectangle cancel_r = {px + 24, by, bw, bh};
+  Rectangle ok_r = {px + pw - 24 - bw, by, bw, bh};
+
+  bool cancel_hov = CheckCollisionPointRec(mouse, cancel_r);
+  bool ok_hov = CheckCollisionPointRec(mouse, ok_r);
+
+  DrawRectangleRec(cancel_r, cancel_hov ? Color{110, 55, 55, 255}
+                                        : Color{80, 40, 40, 255});
+  DrawRectangleLinesEx(cancel_r, 1.0f, {120, 60, 60, 255});
+  DrawText("Cancel", cancel_r.x + (bw - MeasureText("Cancel", 14)) / 2, by + 9,
+           14, WHITE);
+
+  DrawRectangleRec(ok_r,
+                   ok_hov ? Color{55, 110, 55, 255} : Color{40, 80, 40, 255});
+  DrawRectangleLinesEx(ok_r, 1.0f, {60, 120, 60, 255});
+  DrawText("OK", ok_r.x + (bw - MeasureText("OK", 14)) / 2, by + 9, 14, WHITE);
+
+  if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
+    if (minus_hov && shape_popup.pending_shape > 1)
+      shape_popup.pending_shape--;
+    else if (plus_hov && shape_popup.pending_shape < 64)
+      shape_popup.pending_shape++;
+    else if (ok_hov) {
+      shape_popup.target->values.resize(shape_popup.pending_shape, 0.0f);
+      reset_input_state(*input_state);
+      shape_popup.active = false;
+      shape_popup.target = nullptr;
+    } else if (cancel_hov) {
+      shape_popup.active = false;
+      shape_popup.target = nullptr;
+    }
+  }
+
+  if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_KP_ENTER)) {
+    shape_popup.target->values.resize(shape_popup.pending_shape, 0.0f);
+    reset_input_state(*input_state);
+    shape_popup.active = false;
+    shape_popup.target = nullptr;
+  }
+
+  if (IsKeyPressed(KEY_ESCAPE)) {
+    shape_popup.active = false;
+    shape_popup.target = nullptr;
+  }
+}
+
 void Graph::draw_grid(const Camera2D &camera) {
   float gridSpacing = 150.0f;
   float invZoom = 1.0f / camera.zoom;
@@ -313,6 +424,9 @@ Connection Graph::find_port_at(Vector2 cursor_pos, PortKind &out_port) {
 }
 
 void Graph::update(const Camera2D &camera) {
+  if (shape_popup.active)
+    return;
+
   Vector2 mouse_screen = GetMousePosition();
   Vector2 mouse_world = GetScreenToWorld2D(mouse_screen, camera);
 
@@ -348,6 +462,21 @@ void Graph::update(const Camera2D &camera) {
       return;
     }
     Block &b = *clicked;
+
+    if (b.definition->name == "PortInput") {
+      Rectangle header_rect = {b.position.x, b.position.y, b.width,
+                               FIELD_START_H};
+      if (CheckCollisionPointRec(mouse_world, header_rect)) {
+        double now = GetTime();
+        if (now - last_click_time < 0.35 && last_click_block == &b) {
+          open_shape_popup(&b);
+          last_click_block = nullptr;
+          return;
+        }
+        last_click_time = now;
+        last_click_block = &b;
+      }
+    }
 
     float field_y = b.position.y + FIELD_START_H;
     for (size_t fi = 0; fi < b.values.size(); fi++) {
