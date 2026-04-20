@@ -17,6 +17,7 @@ class Library {
 private:
   Rectangle rect;
   std::vector<LibraryOperator> operators;
+  float scroll_offset = 0.0f;
 
 public:
   Library(const Vector2 position, const float width, const float height);
