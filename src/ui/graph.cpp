@@ -40,11 +40,11 @@ Graph::Graph(const size_t shape)
 
 std::string Graph::generate_block_label(const std::string op) {
   int count = 0;
-  std::string label = op + " " + std::to_string(count);
+  std::string label = op;
 
   while (block_label_exists(label)) {
     count++;
-    label = op + " " + std::to_string(count);
+    label = op + std::to_string(count);
   }
 
   return label;
