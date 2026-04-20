@@ -95,13 +95,13 @@ static Color block_type_color(BlockType type) {
 
 static int block_type_order(BlockType type) {
   switch (type) {
-  case BlockType::MATH:
-    return 0;
-  case BlockType::ACTIVATION:
-    return 1;
-  case BlockType::LAYER:
-    return 2;
   case BlockType::IO:
+    return 0;
+  case BlockType::MATH:
+    return 1;
+  case BlockType::ACTIVATION:
+    return 2;
+  case BlockType::LAYER:
     return 3;
   default:
     return 4;

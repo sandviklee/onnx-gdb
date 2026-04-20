@@ -10,6 +10,11 @@ static constexpr float BLOCK_H_BASE = 100.0f;
 static constexpr float FIELD_PAD = 4.0f;
 static constexpr float FIELD_H = 28.0f;
 static constexpr float FIELD_START_H = 38.0f;
+static constexpr float IO_FIELD_START_H = 70.0f;
+static constexpr float GRID_CELL_H = 22.0f;
+static constexpr float GRID_CELL_PAD = 2.0f;
+static constexpr int MAX_GRID_COLS = 5;
+static constexpr int MAX_GRID_ROWS = 6;
 static constexpr float PORT_RADIUS = 8.0f;
 static constexpr float WIRE_THICK = 3.0f;
 

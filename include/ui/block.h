@@ -19,7 +19,8 @@ struct InputFieldState {
 
 struct ShapePopupState {
   Block *target = nullptr;
-  int pending_shape = 1;
+  int pending_rank = 1; // 0=scalar, 1=vector, 2=matrix, 3=tensor
+  int pending_dims[3] = {1, 1, 1};
   bool active = false;
 };
 
@@ -33,6 +34,9 @@ struct BlockDefinition {
 };
 
 inline std::unordered_map<std::string, BlockDefinition> BLOCK_REGISTRY = {
+    // IO
+    {"PortInput", {"PortInput", BlockType::IO, 0, 1}},
+    {"PortOutput", {"PortOutput", BlockType::IO, 1, 0}},
     // Math
     {"MatMul", {"MatMul", BlockType::MATH, 2, 1}},
     {"Add", {"Add", BlockType::MATH, 2, 1}},
@@ -64,9 +68,6 @@ inline std::unordered_map<std::string, BlockDefinition> BLOCK_REGISTRY = {
     {"Reshape", {"Reshape", BlockType::LAYER, 2, 1}},
     {"Transpose", {"Transpose", BlockType::LAYER, 1, 1}},
     {"Concat", {"Concat", BlockType::LAYER, 2, 1}},
-    // IO
-    {"PortInput", {"PortInput", BlockType::IO, 0, 1}},
-    {"PortOutput", {"PortOutput", BlockType::IO, 1, 0}},
 };
 enum class PortKind { INPUT, OUTPUT };
 
@@ -88,6 +89,7 @@ public:
   const BlockDefinition *definition;
   Vector2 position;
   std::vector<float> values;
+  std::vector<int> shape_dims; // {} scalar, {N} vec, {R,C} mat, {D,R,C} tensor
   bool has_results;
   std::string label;
 
@@ -96,6 +98,7 @@ public:
 
   std::vector<Vector2> calculate_input_ports();
   std::vector<Vector2> calculate_output_ports();
+  std::vector<Rectangle> calculate_field_rects() const;
 
   void draw(const InputFieldState &input_state);
 

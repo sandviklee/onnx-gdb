@@ -127,9 +127,17 @@ void Graph::remove_block(Block *block) {
 
 void Graph::connect(Block *parent, Block *child, const size_t out_port_index,
                     const size_t in_port_index) {
-  for (auto c : parent->inputs) {
-    if (c.block == child)
+  for (auto input : parent->inputs) {
+    if (input.block == child)
       return;
+  }
+  if (child->inputs.size() >= child->definition->num_inputs) {
+    for (auto input : child->inputs) {
+      if (input.port_index == in_port_index) {
+        disconnect(input.block, child, input.port_index, in_port_index);
+        break;
+      }
+    }
   }
   parent->outputs.push_back({child, out_port_index});
   child->inputs.push_back({parent, in_port_index});
@@ -196,8 +204,49 @@ bool Graph::popup_active() const { return shape_popup.active; }
 
 void Graph::open_shape_popup(Block *b) {
   shape_popup.target = b;
-  shape_popup.pending_shape = (int)b->values.size();
+  shape_popup.pending_rank = (int)b->shape_dims.size();
+  shape_popup.pending_dims[0] =
+      b->shape_dims.size() >= 1 ? b->shape_dims[0] : 1;
+  shape_popup.pending_dims[1] =
+      b->shape_dims.size() >= 2 ? b->shape_dims[1] : 1;
+  shape_popup.pending_dims[2] =
+      b->shape_dims.size() >= 3 ? b->shape_dims[2] : 1;
   shape_popup.active = true;
+}
+
+// Helper: draw a +/- stepper for one dimension, returns (minus_rect, plus_rect)
+static void draw_dim_stepper(const char *label_str, int value, float lx,
+                             float ly, float total_w, Vector2 mouse,
+                             Rectangle &out_minus, Rectangle &out_plus) {
+  const float btn_w = 26.0f, btn_h = 26.0f, cnt_w = 40.0f;
+  int lbl_w = MeasureText(label_str, 13);
+  DrawText(label_str, lx, ly + 6, 13, LIGHTGRAY);
+
+  float sx = lx + lbl_w + 8;
+  out_minus = {sx, ly, btn_w, btn_h};
+  Rectangle cnt_r = {sx + btn_w + 2, ly, cnt_w, btn_h};
+  out_plus = {sx + btn_w + cnt_w + 4, ly, btn_w, btn_h};
+
+  bool mhov = CheckCollisionPointRec(mouse, out_minus);
+  bool phov = CheckCollisionPointRec(mouse, out_plus);
+
+  DrawRectangleRec(out_minus,
+                   mhov ? Color{100, 100, 110, 255} : Color{65, 65, 75, 255});
+  DrawRectangleLinesEx(out_minus, 1.0f, {85, 85, 95, 255});
+  DrawText("-", out_minus.x + (btn_w - MeasureText("-", 16)) / 2, ly + 4, 16,
+           WHITE);
+
+  DrawRectangleRec(cnt_r, {50, 50, 58, 255});
+  DrawRectangleLinesEx(cnt_r, 1.0f, {75, 75, 85, 255});
+  char vs[8];
+  snprintf(vs, sizeof(vs), "%d", value);
+  DrawText(vs, cnt_r.x + (cnt_w - MeasureText(vs, 14)) / 2, ly + 5, 14, WHITE);
+
+  DrawRectangleRec(out_plus,
+                   phov ? Color{100, 100, 110, 255} : Color{65, 65, 75, 255});
+  DrawRectangleLinesEx(out_plus, 1.0f, {85, 85, 95, 255});
+  DrawText("+", out_plus.x + (btn_w - MeasureText("+", 16)) / 2, ly + 4, 16,
+           WHITE);
 }
 
 void Graph::draw_popup() {
@@ -206,10 +255,9 @@ void Graph::draw_popup() {
 
   int sw = GetScreenWidth();
   int sh = GetScreenHeight();
-
   DrawRectangle(0, 0, sw, sh, {0, 0, 0, 120});
 
-  const float pw = 300.0f, ph = 200.0f;
+  const float pw = 320.0f, ph = 320.0f;
   float px = (sw - pw) / 2.0f;
   float py = (sh - ph) / 2.0f;
 
@@ -219,46 +267,61 @@ void Graph::draw_popup() {
   DrawRectangleRec({px, py, pw, 40.0f}, {25, 25, 30, 255});
   DrawText("Configure Input Shape", px + 12, py + 12, 15, WHITE);
 
-  std::string block_lbl = "Block: " + shape_popup.target->label;
-  DrawText(block_lbl.c_str(), px + 12, py + 52, 14, LIGHTGRAY);
-  DrawText("Number of input values:", px + 12, py + 74, 14, LIGHTGRAY);
-
-  const float btn_w = 34.0f, btn_h = 34.0f, cnt_w = 54.0f;
-  float controls_w = btn_w + cnt_w + btn_w + 8.0f;
-  float cx = px + (pw - controls_w) / 2.0f;
-  float cy = py + 104.0f;
-
-  Rectangle minus_r = {cx, cy, btn_w, btn_h};
-  Rectangle count_r = {cx + btn_w + 4, cy, cnt_w, btn_h};
-  Rectangle plus_r = {cx + btn_w + cnt_w + 8, cy, btn_w, btn_h};
-
   Vector2 mouse = GetMousePosition();
-  bool minus_hov = CheckCollisionPointRec(mouse, minus_r);
-  bool plus_hov = CheckCollisionPointRec(mouse, plus_r);
+  std::string block_lbl = "Block: " + shape_popup.target->label;
+  DrawText(block_lbl.c_str(), px + 14, py + 50, 14, LIGHTGRAY);
 
-  DrawRectangleRec(minus_r, minus_hov ? Color{100, 100, 110, 255}
-                                      : Color{65, 65, 75, 255});
-  DrawRectangleLinesEx(minus_r, 1.0f, {90, 90, 100, 255});
-  DrawText("-", minus_r.x + (btn_w - MeasureText("-", 22)) / 2, cy + 5, 22,
-           WHITE);
+  DrawText("Rank:", px + 14, py + 74, 13, LIGHTGRAY);
+  const char *rank_labels[] = {"scalar", "vector", "matrix", "tensor"};
+  const float rbw = 62.0f, rbh = 26.0f, rbgap = 4.0f;
+  float rx0 = px + 14;
+  for (int r = 0; r < 4; r++) {
+    Rectangle rb = {rx0 + r * (rbw + rbgap), py + 90, rbw, rbh};
+    bool sel = (shape_popup.pending_rank == r);
+    bool hov = CheckCollisionPointRec(mouse, rb);
+    Color bg = sel ? Color{70, 120, 190, 255}
+                   : (hov ? Color{65, 65, 75, 255} : Color{50, 50, 58, 255});
+    DrawRectangleRec(rb, bg);
+    DrawRectangleLinesEx(
+        rb, 1.0f, sel ? Color{100, 160, 230, 255} : Color{80, 80, 90, 255});
+    int tw = MeasureText(rank_labels[r], 13);
+    DrawText(rank_labels[r], rb.x + (rbw - tw) / 2, rb.y + 6, 13, WHITE);
+    if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && hov)
+      shape_popup.pending_rank = r;
+  }
 
-  DrawRectangleRec(count_r, {55, 55, 62, 255});
-  DrawRectangleLinesEx(count_r, 1.0f, {80, 80, 90, 255});
-  char cs[8];
-  snprintf(cs, sizeof(cs), "%d", shape_popup.pending_shape);
-  DrawText(cs, count_r.x + (cnt_w - MeasureText(cs, 20)) / 2, cy + 7, 20,
-           WHITE);
+  DrawLine(px + 12, py + 126, px + pw - 12, py + 126, {65, 65, 72, 255});
+  DrawText("Dimensions:", px + 14, py + 132, 13, LIGHTGRAY);
 
-  DrawRectangleRec(plus_r, plus_hov ? Color{100, 100, 110, 255}
-                                    : Color{65, 65, 75, 255});
-  DrawRectangleLinesEx(plus_r, 1.0f, {90, 90, 100, 255});
-  DrawText("+", plus_r.x + (btn_w - MeasureText("+", 22)) / 2, cy + 5, 22,
-           WHITE);
+  int rank = shape_popup.pending_rank;
+  float dim_y_start = py + 152.0f;
+  const float row_h = 34.0f;
+  const char *dim_names[] = {"D:", "R:", "C:"};
+
+  Rectangle minus_r[3], plus_r[3];
+  if (rank == 0) {
+    DrawText("1 value (no dimensions)", px + 14, dim_y_start + 4, 13, GRAY);
+  } else {
+    for (int d = 0; d < rank; d++) {
+      draw_dim_stepper(dim_names[3 - rank + d], shape_popup.pending_dims[d],
+                       px + 14, dim_y_start + d * row_h, pw - 28, mouse,
+                       minus_r[d], plus_r[d]);
+    }
+  }
+
+  int total = 1;
+  for (int d = 0; d < rank; d++)
+    total *= shape_popup.pending_dims[d];
+  char total_str[64];
+  snprintf(total_str, sizeof(total_str), "Total: %d value%s", total,
+           total == 1 ? "" : "s");
+  DrawText(total_str, px + 14, py + ph - 60, 13,
+           total > 1000 ? Color{200, 80, 80, 255} : LIGHTGRAY);
 
   float bw = 90.0f, bh = 32.0f;
-  float by = py + ph - 46.0f;
-  Rectangle cancel_r = {px + 24, by, bw, bh};
-  Rectangle ok_r = {px + pw - 24 - bw, by, bw, bh};
+  float by = py + ph - 42.0f;
+  Rectangle cancel_r = {px + 20, by, bw, bh};
+  Rectangle ok_r = {px + pw - 20 - bw, by, bw, bh};
 
   bool cancel_hov = CheckCollisionPointRec(mouse, cancel_r);
   bool ok_hov = CheckCollisionPointRec(mouse, ok_r);
@@ -275,12 +338,21 @@ void Graph::draw_popup() {
   DrawText("OK", ok_r.x + (bw - MeasureText("OK", 14)) / 2, by + 9, 14, WHITE);
 
   if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
-    if (minus_hov && shape_popup.pending_shape > 1)
-      shape_popup.pending_shape--;
-    else if (plus_hov && shape_popup.pending_shape < 64)
-      shape_popup.pending_shape++;
-    else if (ok_hov) {
-      shape_popup.target->values.resize(shape_popup.pending_shape, 0.0f);
+    for (int d = 0; d < rank; d++) {
+      if (CheckCollisionPointRec(mouse, minus_r[d]) &&
+          shape_popup.pending_dims[d] > 1)
+        shape_popup.pending_dims[d]--;
+      if (CheckCollisionPointRec(mouse, plus_r[d]) &&
+          shape_popup.pending_dims[d] < 128)
+        shape_popup.pending_dims[d]++;
+    }
+    if (ok_hov) {
+      std::vector<int> new_dims;
+      for (int d = 0; d < rank; d++)
+        new_dims.push_back(shape_popup.pending_dims[d]);
+      int new_total = rank == 0 ? 1 : total;
+      shape_popup.target->shape_dims = new_dims;
+      shape_popup.target->values.resize(new_total, 0.0f);
       reset_input_state(*input_state);
       shape_popup.active = false;
       shape_popup.target = nullptr;
@@ -291,7 +363,12 @@ void Graph::draw_popup() {
   }
 
   if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_KP_ENTER)) {
-    shape_popup.target->values.resize(shape_popup.pending_shape, 0.0f);
+    std::vector<int> new_dims;
+    for (int d = 0; d < rank; d++)
+      new_dims.push_back(shape_popup.pending_dims[d]);
+    int new_total = rank == 0 ? 1 : total;
+    shape_popup.target->shape_dims = new_dims;
+    shape_popup.target->values.resize(new_total, 0.0f);
     reset_input_state(*input_state);
     shape_popup.active = false;
     shape_popup.target = nullptr;
@@ -465,7 +542,7 @@ void Graph::update(const Camera2D &camera) {
 
     if (b.definition->name == "PortInput") {
       Rectangle header_rect = {b.position.x, b.position.y, b.width,
-                               FIELD_START_H};
+                               IO_FIELD_START_H};
       if (CheckCollisionPointRec(mouse_world, header_rect)) {
         double now = GetTime();
         if (now - last_click_time < 0.35 && last_click_block == &b) {
@@ -478,11 +555,9 @@ void Graph::update(const Camera2D &camera) {
       }
     }
 
-    float field_y = b.position.y + FIELD_START_H;
-    for (size_t fi = 0; fi < b.values.size(); fi++) {
-      Rectangle field_rect = {b.position.x + 10.0f, field_y, b.width - 20.0f,
-                              FIELD_H};
-      if (CheckCollisionPointRec(mouse_world, field_rect)) {
+    auto field_rects = b.calculate_field_rects();
+    for (size_t fi = 0; fi < field_rects.size() && fi < b.values.size(); fi++) {
+      if (CheckCollisionPointRec(mouse_world, field_rects[fi])) {
         if (this->input_state->active_block != nullptr &&
             this->input_state->active_field >= 0) {
           Block &prev = *this->input_state->active_block;
@@ -498,8 +573,6 @@ void Graph::update(const Camera2D &camera) {
         clicked_field = true;
         break;
       }
-
-      field_y += FIELD_H + FIELD_PAD;
     }
 
     this->dragging = true;
@@ -614,7 +687,7 @@ void Graph::update(const Camera2D &camera) {
       b.values[this->input_state->active_field] = val;
 
       int next_field = this->input_state->active_field + 1;
-      if (next_field < (int)b.values.size()) {
+      if (next_field < (int)b.calculate_field_rects().size()) {
         this->input_state->active_field = next_field;
         snprintf(this->input_state->buffer, sizeof(this->input_state->buffer),
                  "%.2f", b.values[next_field]);
