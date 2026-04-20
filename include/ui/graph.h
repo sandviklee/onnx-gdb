@@ -38,7 +38,8 @@ public:
   void remove_block(Block *block);
   void connect(Block *parent, Block *child, const size_t out_port_index,
                const size_t in_port_index);
-  void disconnect(Block *parent, Block *child);
+  void disconnect(Block *parent, Block *child, const size_t out_port_index,
+                  const size_t in_port_index);
 
   void inference();
   void draw(const Camera2D &camera);

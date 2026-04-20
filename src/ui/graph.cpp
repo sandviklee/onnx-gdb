@@ -137,16 +137,22 @@ void Graph::connect(Block *parent, Block *child, const size_t out_port_index,
   refresh_orphans();
 }
 
-void Graph::disconnect(Block *parent, Block *child) {
+void Graph::disconnect(Block *parent, Block *child, const size_t out_port_index,
+                       const size_t in_port_index) {
   parent->outputs.erase(
       std::remove_if(parent->outputs.begin(), parent->outputs.end(),
-                     [child](const Connection &c) { return c.block == child; }),
+                     [child, out_port_index](const Connection &c) {
+                       return c.block == child &&
+                              c.port_index == out_port_index;
+                     }),
       parent->outputs.end());
-  child->inputs.erase(std::remove_if(child->inputs.begin(), child->inputs.end(),
-                                     [parent](const Connection &c) {
-                                       return c.block == parent;
-                                     }),
-                      child->inputs.end());
+  child->inputs.erase(
+      std::remove_if(child->inputs.begin(), child->inputs.end(),
+                     [parent, in_port_index](const Connection &c) {
+                       return c.block == parent &&
+                              c.port_index == in_port_index;
+                     }),
+      child->inputs.end());
   topology_dirty = true;
   refresh_orphans();
 }
@@ -387,17 +393,19 @@ void Graph::update(const Camera2D &camera) {
     }
 
     PortKind clicked_port;
-    Block *port_block = find_port_at(mouse_world, clicked_port).block;
-    if (port_block) {
+    Connection target = find_port_at(mouse_world, clicked_port);
+    if (target.block) {
       if (clicked_port == PortKind::OUTPUT) {
-        auto children_copy = port_block->outputs;
-        for (auto child : children_copy) {
-          disconnect(port_block, child.block);
+        auto outputs = target.block->outputs;
+        for (auto output : outputs) {
+          disconnect(target.block, output.block, output.port_index,
+                     target.port_index);
         }
       } else {
-        auto parents_copy = port_block->inputs;
-        for (auto parent : parents_copy) {
-          disconnect(parent.block, port_block);
+        auto inputs = target.block->inputs;
+        for (auto input : inputs) {
+          disconnect(input.block, target.block, input.port_index,
+                     target.port_index);
         }
       }
     }
