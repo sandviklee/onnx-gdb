@@ -30,11 +30,16 @@ std::string open_onnx_file_dialog() {
   if (!got)
     return "";
 
-  std::string path(buf);
-  if (path.size() < 5 || path.compare(path.size() - 5, 5, ".onnx") != 0) {
-    return ""; // or show an error
-  }
-  return path;
+  // Strip trailing whitespace/newlines that fgets leaves in
+  size_t len = strlen(buf);
+  while (len > 0 && (buf[len - 1] == '\n' || buf[len - 1] == '\r' ||
+                     buf[len - 1] == ' '))
+    buf[--len] = '\0';
+
+  if (len == 0)
+    return "";
+
+  return std::string(buf);
 
 #else
   return "";
