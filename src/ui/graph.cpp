@@ -6,6 +6,7 @@
 #include <cstring>
 #include <deque>
 #include <memory>
+#include <sstream>
 #include <unordered_set>
 
 Graph::Graph(const size_t shape)
@@ -80,17 +81,81 @@ bool Graph::block_label_exists(const std::string &label) {
 }
 
 void Graph::push_block(Block *block) {
+  block->height = block->calculate_height();
   blocks.push_back(std::unique_ptr<Block>(block));
   if (block->definition->name == "PortInput") {
     roots.push_back(block);
   }
-
   if (block->definition->name == "PortOutput") {
     leafs.push_back(block);
   }
-
   topology_dirty = true;
   refresh_orphans();
+}
+
+void Graph::clear() {
+  if (input_state->active_block)
+    reset_input_state(*input_state);
+  blocks.clear();
+  orphans.clear();
+  roots.clear();
+  leafs.clear();
+  dragging = false;
+  dragged_block = nullptr;
+  last_click_block = nullptr;
+  connection_state = {};
+  shape_popup = {};
+  topology_dirty = true;
+  inference_ran = false;
+}
+
+void Graph::push_notification(const std::string &msg, bool is_error) {
+  notifications.push_back({msg, is_error, GetTime() + 5.0});
+}
+
+std::vector<std::string> split(const std::string &s) {
+  std::istringstream iss(s);
+  return {std::istream_iterator<std::string>(iss),
+          std::istream_iterator<std::string>()};
+}
+
+void Graph::draw_notifications() {
+  double now = GetTime();
+  notifications.erase(
+      std::remove_if(notifications.begin(), notifications.end(),
+                     [now](const Notification &n) { return now > n.expire; }),
+      notifications.end());
+
+  int sw = GetScreenWidth();
+  float y = 70.0f;
+  for (const auto &n : notifications) {
+    float alpha_f = (float)std::min(1.0, n.expire - now);
+    unsigned char alpha = (unsigned char)(alpha_f * 220);
+    Color bg =
+        n.is_error ? Color{170, 45, 45, alpha} : Color{45, 140, 71, alpha};
+    Color fg = {255, 255, 255, alpha};
+
+    float h = 36.0f;
+    size_t wcic = 4;
+    std::string message = "";
+    auto words = split(n.msg);
+    for (size_t i = 0; i < words.size(); ++i) {
+      if (i % wcic == 0 && i != 0) {
+        message += "\n";
+        h += 20.0f;
+      }
+      message += std::string(words[i]) + " ";
+    }
+    int tw = MeasureText(message.c_str(), 14);
+    float w = tw + 36.0f;
+    float x = (sw - w) / 2.0f;
+    DrawRectangleRounded({x, y, w, h}, 0.2f, 6, bg);
+    DrawRectangleRoundedLinesEx({x, y, w, h}, 0.2f, 6, 1.0f,
+                                {255, 255, 255, (unsigned char)(alpha / 2)});
+
+    DrawText(message.c_str(), x + (w - tw) / 2.0f, y + 14, 14, fg);
+    y += h + 6.0f;
+  }
 }
 
 void Graph::remove_block(Block *block) {

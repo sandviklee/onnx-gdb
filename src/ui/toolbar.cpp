@@ -9,8 +9,8 @@ ToolbarButton::ToolbarButton(const ToolbarButtonType type, const float size,
                              const Vector2 position)
     : type(type) {
   switch (type) {
-  case ToolbarButtonType::POINTER:
-    icon_id = ICON_CURSOR_CLASSIC;
+  case ToolbarButtonType::OPEN_FILE:
+    icon_id = ICON_FILE_OPEN;
     break;
   case ToolbarButtonType::LIBRARY:
     icon_id = ICON_FOLDER_OPEN;

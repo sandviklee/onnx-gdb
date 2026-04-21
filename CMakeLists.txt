@@ -94,10 +94,11 @@ target_link_libraries(romllui PUBLIC raylib)
 target_sources(romllui PRIVATE ${CMAKE_BINARY_DIR}/raygui_impl.c)
 target_include_directories(romllui PRIVATE ${raygui_SOURCE_DIR}/src)
 
-add_executable(${PROJECT_NAME} src/main.cpp)
+add_executable(${PROJECT_NAME} src/main.cpp src/ui/filedlg.cpp)
 target_link_directories(${PROJECT_NAME} PRIVATE
   "${ONNXRUNTIME_ROOTDIR}/lib"
 )
+target_include_directories(${PROJECT_NAME} PRIVATE include)
 target_link_libraries(${PROJECT_NAME} PRIVATE onnxruntime romll romllui)
 
 if(APPLE)

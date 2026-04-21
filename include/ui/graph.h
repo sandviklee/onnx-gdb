@@ -1,7 +1,14 @@
 #include "raylib.h"
 #include "ui/block.h"
 #include <memory>
+#include <string>
 #include <vector>
+
+struct Notification {
+  std::string msg;
+  bool is_error;
+  double expire;
+};
 
 #pragma once
 #ifndef GRAPH_H
@@ -35,6 +42,8 @@ public:
   double last_click_time = 0.0;
   Block *last_click_block = nullptr;
 
+  std::vector<Notification> notifications;
+
   Graph(const size_t shape);
 
   std::string generate_block_label(const std::string op);
@@ -45,9 +54,12 @@ public:
   void disconnect(Block *parent, Block *child, const size_t out_port_index,
                   const size_t in_port_index);
 
+  void clear();
   void inference();
   void draw(const Camera2D &camera);
   void draw_popup();
+  void draw_notifications();
+  void push_notification(const std::string &msg, bool is_error);
   void update(const Camera2D &camera);
   bool ready();
   bool popup_active() const;

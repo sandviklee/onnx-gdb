@@ -3,6 +3,7 @@
 #include "rlgl.h"
 #include "romll/romll.h"
 #include "ui/block.h"
+#include "ui/filedlg.h"
 #include "ui/graph.h"
 #include "ui/toolbar.h"
 
@@ -25,17 +26,38 @@ void do_toolbar_action(ROMLL &romll, Graph &graph, Toolbar &toolbar,
     return;
   }
   switch ((ToolbarButtonType)action) {
-  case ToolbarButtonType::POINTER:
+  case ToolbarButtonType::OPEN_FILE: {
+    std::string path = open_onnx_file_dialog();
+    if (!path.empty()) {
+      std::string msg;
+      if (romll.load_onnx_file(path, msg)) {
+        if (msg.empty())
+          graph.push_notification("Model loaded successfully", false);
+        else
+          graph.push_notification("Loaded (warnings): " + msg, false);
+      } else {
+        graph.push_notification("Import failed: " + msg, true);
+      }
+    }
+    toolbar.show_library = false;
     break;
+  }
   case ToolbarButtonType::LIBRARY:
     toolbar.show_library = !toolbar.show_library;
+    break;
   case ToolbarButtonType::DEBUG:
     break;
   case ToolbarButtonType::INFERENCE:
-    romll.run_inference();
+    try {
+      romll.run_inference();
+    } catch (const std::exception &e) {
+      graph.push_notification(std::string("Inference error: ") + e.what(),
+                              true);
+    }
     if (graph.input_state->active_block != nullptr) {
       reset_input_state(*graph.input_state);
     }
+    break;
   }
 }
 
@@ -104,11 +126,12 @@ int main() {
 
     toolbar.draw();
     graph.draw_popup();
+    graph.draw_notifications();
 
     DrawText(
-        "Left og middle mouse drag to pan. Ctrl+Scroll to zoom. Drag blocks to "
-        "reposition.",
-        20, 22, 18, GRAY);
+        "Left/middle drag to pan. Ctrl+Scroll to zoom. Double-click PortInput "
+        "to configure shape.",
+        20, 22, 16, GRAY);
     DrawCircleV(GetMousePosition(), 3, DARKGRAY);
 
     EndDrawing();
