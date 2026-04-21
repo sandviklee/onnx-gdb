@@ -104,6 +104,11 @@ public:
 
   std::vector<Connection> inputs;
   std::vector<Connection> outputs;
+
+  // Debug inference results (values flowing out of this block's output)
+  std::vector<float> debug_output_values;
+  std::vector<int64_t> debug_output_shape;
+  bool has_debug_values = false;
 };
 
 struct ConnectionState {

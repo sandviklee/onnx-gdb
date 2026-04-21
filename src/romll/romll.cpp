@@ -70,7 +70,6 @@ onnx::ModelProto ROMLL::parse_ui_graph(const Graph &graph) {
         node->add_output(current->label.c_str());
       }
     }
-
     for (auto child : current->outputs) {
       printf("Child of %s: %s, on index: %zu\n", current->label.c_str(),
              child.block->label.c_str(), child.port_index);
@@ -333,6 +332,130 @@ void ROMLL::build_graph_from_onnx(const onnx::ModelProto &model,
                       0);
     }
   next_output:;
+  }
+}
+
+void ROMLL::run_debug_inference() {
+  try {
+    if (graph.topology_dirty)
+      rebuild_session();
+
+    // Build a modified ONNX model that exposes every node output as a graph
+    // output. This is more reliable than requesting intermediate tensors by
+    // name from the main session, which ORT may reject.
+    onnx::ModelProto debug_model = parse_ui_graph(graph);
+    auto *dg = debug_model.mutable_graph();
+
+    // Track names already in graph.output to avoid duplicates
+    std::unordered_set<std::string> declared_outputs;
+    for (const auto &o : dg->output())
+      declared_outputs.insert(o.name());
+
+    // Map: ONNX tensor name -> Block* (for non-IO nodes)
+    std::unordered_map<std::string, Block *> name_to_block;
+    {
+      std::deque<Block *> q(graph.roots.begin(), graph.roots.end());
+      std::unordered_set<Block *> vis(graph.roots.begin(), graph.roots.end());
+      while (!q.empty()) {
+        Block *cur = q.front();
+        q.pop_front();
+        const std::string &bname = cur->definition->name;
+        if (bname != "PortInput" && bname != "PortOutput") {
+          std::string out_name =
+              (!cur->outputs.empty() &&
+               cur->outputs[0].block->definition->name == "PortOutput")
+                  ? cur->outputs[0].block->label
+                  : cur->label;
+          name_to_block[out_name] = cur;
+        }
+        for (auto child : cur->outputs)
+          if (vis.insert(child.block).second)
+            q.push_back(child.block);
+      }
+    }
+
+    // Promote every node output to a graph output so ORT will return it
+    for (const auto &node : dg->node()) {
+      for (const auto &oname : node.output()) {
+        if (oname.empty() || declared_outputs.count(oname))
+          continue;
+        auto *go = dg->add_output();
+        go->set_name(oname);
+        auto *tt = go->mutable_type()->mutable_tensor_type();
+        tt->set_elem_type(onnx::TensorProto_DataType_FLOAT);
+        declared_outputs.insert(oname);
+      }
+    }
+
+    // Serialize the debug model and create a temporary session
+    std::string debug_bytes;
+    debug_model.SerializeToString(&debug_bytes);
+    Ort::Session debug_session(env, debug_bytes.data(), debug_bytes.size(),
+                               Ort::SessionOptions{nullptr});
+
+    // Collect all output names from the debug session in order
+    Ort::AllocatorWithDefaultOptions alloc;
+    size_t num_out = debug_session.GetOutputCount();
+    std::vector<std::string> out_name_strs;
+    out_name_strs.reserve(num_out);
+    for (size_t i = 0; i < num_out; i++) {
+      auto name_ptr = debug_session.GetOutputNameAllocated(i, alloc);
+      out_name_strs.emplace_back(name_ptr.get());
+    }
+    std::vector<const char *> out_name_ptrs;
+    for (auto &s : out_name_strs)
+      out_name_ptrs.push_back(s.c_str());
+
+    // Build input tensors
+    std::vector<Ort::Value> input_tensors;
+    for (auto *root : graph.roots) {
+      auto &data = root->values;
+      std::vector<int64_t> shape;
+      if (!root->shape_dims.empty()) {
+        for (int d : root->shape_dims)
+          shape.push_back((int64_t)d);
+      } else {
+        shape = {(int64_t)data.size()};
+      }
+      input_tensors.push_back(Ort::Value::CreateTensor(
+          memory_info, data.data(), data.size(), shape.data(), shape.size()));
+    }
+
+    Ort::RunOptions run_options{nullptr};
+    auto outputs = debug_session.Run(
+        run_options, input_names.data(), input_tensors.data(),
+        input_names.size(), out_name_ptrs.data(), out_name_ptrs.size());
+
+    // Store results back onto blocks
+    for (size_t i = 0; i < outputs.size(); i++) {
+      const std::string &oname = out_name_strs[i];
+      auto it = name_to_block.find(oname);
+      if (it == name_to_block.end())
+        continue;
+      auto info = outputs[i].GetTensorTypeAndShapeInfo();
+      it->second->debug_output_shape = info.GetShape();
+      int64_t count = info.GetElementCount();
+      float *data = outputs[i].GetTensorMutableData<float>();
+      it->second->debug_output_values.assign(data, data + count);
+      it->second->has_debug_values = true;
+    }
+
+    // PortInput wires show their user-set values
+    for (auto *root : graph.roots) {
+      root->debug_output_values = root->values;
+      root->debug_output_shape.clear();
+      for (int d : root->shape_dims)
+        root->debug_output_shape.push_back((int64_t)d);
+      if (root->debug_output_shape.empty())
+        root->debug_output_shape = {(int64_t)root->values.size()};
+      root->has_debug_values = true;
+    }
+
+    graph.debug_mode = true;
+    graph.push_notification("Debug: wire values visible", false);
+
+  } catch (const Ort::Exception &e) {
+    graph.push_notification(std::string("Debug error: ") + e.what(), true);
   }
 }
 

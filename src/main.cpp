@@ -46,6 +46,17 @@ void do_toolbar_action(ROMLL &romll, Graph &graph, Toolbar &toolbar,
     toolbar.show_library = !toolbar.show_library;
     break;
   case ToolbarButtonType::DEBUG:
+    if (graph.debug_mode) {
+      graph.debug_mode = false;
+      for (auto &bp : graph.blocks)
+        bp->has_debug_values = false;
+    } else {
+      try {
+        romll.run_debug_inference();
+      } catch (const std::exception &e) {
+        graph.push_notification(std::string("Debug error: ") + e.what(), true);
+      }
+    }
     break;
   case ToolbarButtonType::INFERENCE:
     try {
@@ -124,6 +135,7 @@ int main() {
 
     EndMode2D();
 
+    graph.draw_wire_tooltips(camera);
     toolbar.draw();
     graph.draw_popup();
     graph.draw_notifications();

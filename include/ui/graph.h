@@ -41,8 +41,16 @@ public:
 
   double last_click_time = 0.0;
   Block *last_click_block = nullptr;
+  bool debug_mode = false;
 
   std::vector<Notification> notifications;
+
+  struct WireTooltip {
+    Vector2 world_mid;
+    std::string shape_text;
+    std::string value_text;
+  };
+  std::vector<WireTooltip> wire_tooltips;
 
   Graph(const size_t shape);
 
@@ -57,6 +65,7 @@ public:
   void clear();
   void inference();
   void draw(const Camera2D &camera);
+  void draw_wire_tooltips(const Camera2D &camera);
   void draw_popup();
   void draw_notifications();
   void push_notification(const std::string &msg, bool is_error);

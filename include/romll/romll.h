@@ -30,6 +30,7 @@ public:
 
   void save_model(const onnx::ModelProto &model, const std::string &path);
   void run_inference();
+  void run_debug_inference();
   bool load_onnx_file(const std::string &path, std::string &error);
 };
 

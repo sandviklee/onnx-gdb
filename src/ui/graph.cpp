@@ -9,6 +9,49 @@
 #include <sstream>
 #include <unordered_set>
 
+static std::string format_debug_shape(const std::vector<int64_t> &shape) {
+  if (shape.empty())
+    return "scalar";
+  std::string s = "[";
+  for (size_t i = 0; i < shape.size(); i++) {
+    if (i > 0)
+      s += "\xc3\x97"; // UTF-8 × (U+00D7)
+    s += std::to_string(shape[i]);
+  }
+  s += "]";
+  return s;
+}
+
+static std::string format_debug_shape_from_dims(const std::vector<int> &dims) {
+  if (dims.empty())
+    return "scalar";
+  std::string s = "[";
+  for (size_t i = 0; i < dims.size(); i++) {
+    if (i > 0)
+      s += "\xc3\x97";
+    s += std::to_string(dims[i]);
+  }
+  s += "]";
+  return s;
+}
+
+static std::string format_debug_values(const std::vector<float> &vals) {
+  if (vals.empty())
+    return "";
+  char buf[32];
+  std::string s;
+  size_t show = std::min(vals.size(), (size_t)4);
+  for (size_t i = 0; i < show; i++) {
+    if (i > 0)
+      s += ", ";
+    snprintf(buf, sizeof(buf), "%.3g", vals[i]);
+    s += buf;
+  }
+  if (vals.size() > 4)
+    s += " \xe2\x80\xa6"; // UTF-8 … (U+2026)
+  return s;
+}
+
 Graph::Graph(const size_t shape)
     : dragged_block(nullptr), inference_ran(false), dragging(false),
       topology_dirty(false) {
@@ -466,6 +509,23 @@ void Graph::draw_grid(const Camera2D &camera) {
 
 void Graph::draw(const Camera2D &camera) {
   draw_grid(camera);
+  wire_tooltips.clear();
+
+  auto collect_wire_tooltip = [&](Block *src, Vector2 from, Vector2 to) {
+    if (!debug_mode)
+      return;
+    Vector2 mid = {(from.x + to.x) * 0.5f, (from.y + to.y) * 0.5f};
+    std::string shape_text, value_text;
+    if (src->definition->name == "PortInput") {
+      shape_text = format_debug_shape_from_dims(src->shape_dims);
+      value_text = format_debug_values(src->values);
+    } else if (src->has_debug_values) {
+      shape_text = format_debug_shape(src->debug_output_shape);
+      value_text = format_debug_values(src->debug_output_values);
+    }
+    if (!shape_text.empty())
+      wire_tooltips.push_back({mid, shape_text, value_text});
+  };
 
   if (!roots.empty()) {
     std::deque<Block *> queue(roots.begin(), roots.end());
@@ -487,8 +547,10 @@ void Graph::draw(const Camera2D &camera) {
                 [curr](const Connection &c) { return c.block == curr; })
                 ->port_index;
 
-        draw_wire(curr->calculate_output_ports()[child.port_index],
-                  child.block->calculate_input_ports()[in_port_index]);
+        Vector2 from = curr->calculate_output_ports()[child.port_index];
+        Vector2 to = child.block->calculate_input_ports()[in_port_index];
+        draw_wire(from, to);
+        collect_wire_tooltip(curr, from, to);
       }
     }
   }
@@ -503,8 +565,10 @@ void Graph::draw(const Camera2D &camera) {
               child.block->inputs.begin(), child.block->inputs.end(),
               [orphan](const Connection &c) { return c.block == orphan; })
               ->port_index;
-      draw_wire(orphan->calculate_output_ports()[child.port_index],
-                child.block->calculate_input_ports()[in_port_index]);
+      Vector2 from = orphan->calculate_output_ports()[child.port_index];
+      Vector2 to = child.block->calculate_input_ports()[in_port_index];
+      draw_wire(from, to);
+      collect_wire_tooltip(orphan, from, to);
     }
   }
 
@@ -772,6 +836,39 @@ void Graph::update(const Camera2D &camera) {
   if (this->dragging && IsMouseButtonReleased(MOUSE_LEFT_BUTTON)) {
     this->dragging = false;
     this->dragged_block = nullptr;
+  }
+}
+
+void Graph::draw_wire_tooltips(const Camera2D &camera) {
+  const int fs = 12;
+  int sw = GetScreenWidth();
+  int sh = GetScreenHeight();
+
+  for (const auto &tt : wire_tooltips) {
+    Vector2 sp = GetWorldToScreen2D(tt.world_mid, camera);
+
+    int w1 = MeasureText(tt.shape_text.c_str(), fs);
+    int w2 = tt.value_text.empty() ? 0 : MeasureText(tt.value_text.c_str(), fs);
+    float content_w = (float)std::max(w1, w2);
+    bool two_lines = !tt.value_text.empty();
+    float box_w = content_w + 16.0f;
+    float box_h = two_lines ? (float)(fs * 2 + 14) : (float)(fs + 10);
+
+    float bx = sp.x - box_w * 0.5f;
+    float by = sp.y - box_h * 0.5f;
+    bx = std::max(4.0f, std::min(bx, (float)(sw) - box_w - 4.0f));
+    by = std::max(4.0f, std::min(by, (float)(sh) - box_h - 4.0f));
+
+    Rectangle box = {bx, by, box_w, box_h};
+    DrawRectangleRounded(box, 0.35f, 6, {18, 18, 28, 225});
+    DrawRectangleRoundedLinesEx(box, 0.35f, 6, 1.0f, {90, 110, 160, 200});
+
+    DrawText(tt.shape_text.c_str(), (int)(bx + 8), (int)(by + 4), fs,
+             {160, 200, 255, 240});
+    if (two_lines) {
+      DrawText(tt.value_text.c_str(), (int)(bx + 8), (int)(by + 4 + fs + 2),
+               fs, {200, 200, 200, 220});
+    }
   }
 }
 
