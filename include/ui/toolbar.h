@@ -26,11 +26,12 @@ public:
   std::string handle_click();
 };
 
-enum class ToolbarButtonType { OPEN_FILE, LIBRARY, DEBUG, INFERENCE };
+enum class ToolbarButtonType { OPEN_FILE, LIBRARY, DEBUG, INFERENCE, RESET };
 
 constexpr ToolbarButtonType all_types[] = {
     ToolbarButtonType::OPEN_FILE, ToolbarButtonType::LIBRARY,
-    ToolbarButtonType::DEBUG, ToolbarButtonType::INFERENCE};
+    ToolbarButtonType::DEBUG, ToolbarButtonType::INFERENCE,
+    ToolbarButtonType::RESET};
 
 class ToolbarButton {
   friend class Toolbar;

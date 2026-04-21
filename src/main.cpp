@@ -11,8 +11,8 @@ void do_library_action(Graph &graph, Toolbar &toolbar, const std::string &op) {
   if (op.empty()) {
     return;
   }
-  Block *b = new Block(op, graph.generate_block_label(op),
-                       Vector2{400.0f, 400.0f}, 1);
+  Block *b =
+      new Block(op, graph.generate_block_label(op), Vector2{400.0f, 400.0f}, 1);
   graph.push_block(b);
   if (op == "PortInput") {
     graph.open_shape_popup(b);
@@ -69,6 +69,10 @@ void do_toolbar_action(ROMLL &romll, Graph &graph, Toolbar &toolbar,
       reset_input_state(*graph.input_state);
     }
     break;
+  case ToolbarButtonType::RESET:
+    graph.clear();
+    graph.push_notification("Graph cleared", false);
+    break;
   }
 }
 
@@ -118,7 +122,8 @@ int main() {
       if (IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL) ||
           IsKeyDown(KEY_LEFT_SUPER)) {
         if (wheel != 0) {
-          Vector2 mouseWorldPos = GetScreenToWorld2D(GetMousePosition(), camera);
+          Vector2 mouseWorldPos =
+              GetScreenToWorld2D(GetMousePosition(), camera);
           camera.offset = GetMousePosition();
           camera.target = mouseWorldPos;
           float scale = 0.1f * wheel;

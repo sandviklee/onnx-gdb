@@ -21,6 +21,9 @@ ToolbarButton::ToolbarButton(const ToolbarButtonType type, const float size,
   case ToolbarButtonType::INFERENCE:
     icon_id = ICON_PLAYER_PLAY;
     break;
+  case ToolbarButtonType::RESET:
+    icon_id = ICON_REDO;
+    break;
   }
   rect = {position.x, position.y, size, size};
 }
