@@ -30,10 +30,9 @@ std::string open_onnx_file_dialog() {
   if (!got)
     return "";
 
-  // Strip trailing whitespace/newlines that fgets leaves in
   size_t len = strlen(buf);
-  while (len > 0 && (buf[len - 1] == '\n' || buf[len - 1] == '\r' ||
-                     buf[len - 1] == ' '))
+  while (len > 0 &&
+         (buf[len - 1] == '\n' || buf[len - 1] == '\r' || buf[len - 1] == ' '))
     buf[--len] = '\0';
 
   if (len == 0)

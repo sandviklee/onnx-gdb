@@ -210,7 +210,6 @@ void Block::draw(const InputFieldState &input_state) {
       }
     }
 
-    // Info line for large / rank3 tensors
     if ((rank == 2 && rects.empty()) || rank >= 3) {
       int total = 1;
       for (int d : shape_dims)

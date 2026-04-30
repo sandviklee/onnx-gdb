@@ -21,7 +21,8 @@ private:
   onnx::ModelProto parse_ui_graph(const Graph &graph);
   std::vector<Ort::Value> run_model(const Ort::RunOptions &options);
   void rebuild_session();
-  void build_graph_from_onnx(const onnx::ModelProto &model, std::string &warnings);
+  void build_graph_from_onnx(const onnx::ModelProto &model,
+                             std::string &warnings);
 
 public:
   ROMLL(Graph &graph);

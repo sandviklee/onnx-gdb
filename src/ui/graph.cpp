@@ -322,7 +322,6 @@ void Graph::open_shape_popup(Block *b) {
   shape_popup.active = true;
 }
 
-// Helper: draw a +/- stepper for one dimension, returns (minus_rect, plus_rect)
 static void draw_dim_stepper(const char *label_str, int value, float lx,
                              float ly, float total_w, Vector2 mouse,
                              Rectangle &out_minus, Rectangle &out_plus) {
@@ -839,7 +838,8 @@ void Graph::update(const Camera2D &camera) {
   }
 }
 
-void Graph::draw_wire_tooltips(const Camera2D &camera) {
+void Graph::draw_wire_tooltips(
+    const Camera2D &camera) { // TODO: Dynamic support for differnet ranks
   const int fs = 12;
   int sw = GetScreenWidth();
   int sh = GetScreenHeight();
@@ -856,8 +856,8 @@ void Graph::draw_wire_tooltips(const Camera2D &camera) {
 
     float bx = sp.x - box_w * 0.5f;
     float by = sp.y - box_h * 0.5f;
-    bx = std::max(4.0f, std::min(bx, (float)(sw) - box_w - 4.0f));
-    by = std::max(4.0f, std::min(by, (float)(sh) - box_h - 4.0f));
+    bx = std::max(4.0f, std::min(bx, (float)(sw)-box_w - 4.0f));
+    by = std::max(4.0f, std::min(by, (float)(sh)-box_h - 4.0f));
 
     Rectangle box = {bx, by, box_w, box_h};
     DrawRectangleRounded(box, 0.35f, 6, {18, 18, 28, 225});
@@ -866,8 +866,8 @@ void Graph::draw_wire_tooltips(const Camera2D &camera) {
     DrawText(tt.shape_text.c_str(), (int)(bx + 8), (int)(by + 4), fs,
              {160, 200, 255, 240});
     if (two_lines) {
-      DrawText(tt.value_text.c_str(), (int)(bx + 8), (int)(by + 4 + fs + 2),
-               fs, {200, 200, 200, 220});
+      DrawText(tt.value_text.c_str(), (int)(bx + 8), (int)(by + 4 + fs + 2), fs,
+               {200, 200, 200, 220});
     }
   }
 }
