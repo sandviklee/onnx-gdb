@@ -1,3 +1,4 @@
+#pragma once
 #include "raylib.h"
 
 static constexpr int TOOLBAR_PADDING = 10;
@@ -18,8 +19,8 @@ static constexpr int MAX_GRID_ROWS = 6;
 static constexpr float PORT_RADIUS = 8.0f;
 static constexpr float WIRE_THICK = 3.0f;
 
-static constexpr float LIBRARY_H = 420.0f;
-static constexpr float LIBRARY_W = 260.0f;
+static constexpr float LIBRARY_HEIGHT = 420.0f;
+static constexpr float LIBRARY_WIDTH = 260.0f;
 static constexpr float LIBRARY_HEADER_H = 44.0f;
 static constexpr float LIBRARY_ITEM_H = 38.0f;
 static constexpr float LIBRARY_ITEM_GAP = 4.0f;
@@ -34,6 +35,8 @@ static const Color COLOR_INFERENCE_HOVER = {60, 240, 60, 255};
 static const Color COLOR_RESULT_BG = {220, 245, 220, 255};
 
 struct raylib_config {
-  int window_height;
-  int window_width;
+    int window_height;
+    int window_width;
 };
+
+static constexpr float LIBRARY_H = LIBRARY_HEIGHT;

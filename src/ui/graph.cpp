@@ -1,6 +1,5 @@
 #include "ui/graph.h"
 #include "raylib.h"
-#include "ui/block.h"
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
@@ -9,13 +8,15 @@
 #include <sstream>
 #include <unordered_set>
 
+namespace ui {
+
 static std::string format_debug_shape(const std::vector<int64_t> &shape) {
   if (shape.empty())
     return "scalar";
   std::string s = "[";
   for (size_t i = 0; i < shape.size(); i++) {
     if (i > 0)
-      s += "\xc3\x97"; // UTF-8 × (U+00D7)
+      s += "\xc3\x97";
     s += std::to_string(shape[i]);
   }
   s += "]";
@@ -48,121 +49,305 @@ static std::string format_debug_values(const std::vector<float> &vals) {
     s += buf;
   }
   if (vals.size() > 4)
-    s += " \xe2\x80\xa6"; // UTF-8 … (U+2026)
+    s += " \xe2\x80\xa6";
   return s;
 }
 
-Graph::Graph(const size_t shape)
-    : dragged_block(nullptr), inference_ran(false), dragging(false),
-      topology_dirty(false) {
-  // TODO: We will only push an output and input block.
+UIGraph::UIGraph(size_t initial_shape)
+    : input_state(std::make_unique<InputFieldState>()) {
+  auto *input_node =
+      new ir::Node("PortInput", ir_graph.generate_node_label("PortInput"));
+  input_node->shape_dims = {(int)initial_shape};
+  input_node->values.assign(initial_shape, 0.0f);
+  input_node->layout_hint = {200.0f, 200.0f};
 
-  blocks.push_back(std::make_unique<Block>("PortInput",
-                                           generate_block_label("PortInput"),
-                                           Vector2{200.0f, 200.0f}, shape));
-  blocks.push_back(std::make_unique<Block>("PortOutput",
-                                           generate_block_label("PortOutput"),
-                                           Vector2{800.0f, 200.0f}, shape));
-  blocks.push_back(std::make_unique<Block>("Relu", generate_block_label("Relu"),
-                                           Vector2{450.0f, 400.0f}, shape));
+  auto *output_node =
+      new ir::Node("PortOutput", ir_graph.generate_node_label("PortOutput"));
+  output_node->layout_hint = {800.0f, 200.0f};
 
-  Block *input_block = blocks[0].get();
-  Block *output_block = blocks[1].get();
-  Block *relu_block = blocks[2].get();
+  auto *relu_node = new ir::Node("Relu", ir_graph.generate_node_label("Relu"));
+  relu_node->layout_hint = {450.0f, 400.0f};
 
-  this->roots = {input_block};
-  this->leafs = {output_block};
+  ir_graph.add_node(input_node);
+  ir_graph.add_node(output_node);
+  ir_graph.add_node(relu_node);
 
-  connect(input_block, relu_block, 0, 0);
-  connect(relu_block, output_block, 0, 0);
+  ir_graph.connect(input_node, relu_node, 0, 0);
+  ir_graph.connect(relu_node, output_node, 0, 0);
 
-  InputFieldState input_state_val = InputFieldState{};
-
-  this->input_state = std::make_unique<InputFieldState>(input_state_val);
-  refresh_orphans();
+  for (const auto &node_ptr : ir_graph.nodes) {
+    ir::Node *node = node_ptr.get();
+    Vector2 pos = {node->layout_hint.x, node->layout_hint.y};
+    auto block = std::make_unique<Block>(node, pos);
+    register_block(block.get());
+    blocks.push_back(std::move(block));
+  }
 }
 
-std::string Graph::generate_block_label(const std::string op) {
-  int count = 0;
-  std::string label = op;
-
-  while (block_label_exists(label)) {
-    count++;
-    label = op + std::to_string(count);
-  }
-
-  return label;
+void UIGraph::register_block(Block *block) {
+  node_to_block[block->node] = block;
 }
 
-int Graph::count_blocks_with_type(const std::string type) {
-  int count = 0;
-  for (const auto &bp : blocks) {
-    if (bp->definition->name == type) {
-      count++;
-    }
-  }
-  for (const auto &orphan : orphans) {
-    if (orphan->definition->name == type) {
-      count++;
-    }
-  }
-  return count;
+void UIGraph::unregister_block(Block *block) {
+  node_to_block.erase(block->node);
 }
 
-bool Graph::block_label_exists(const std::string &label) {
-  for (const auto &bp : blocks) {
-    if (bp->label == label) {
-      return true;
-    }
-  }
-  for (const auto &orphan : orphans) {
-    if (orphan->label == label) {
-      return true;
-    }
-  }
-  return false;
+Block *UIGraph::find_block_for_node(ir::Node *node) const {
+  auto it = node_to_block.find(node);
+  return it != node_to_block.end() ? it->second : nullptr;
 }
 
-void Graph::push_block(Block *block) {
-  block->height = block->calculate_height();
-  blocks.push_back(std::unique_ptr<Block>(block));
-  if (block->definition->name == "PortInput") {
-    roots.push_back(block);
+Block *UIGraph::add_block(const std::string &op_name, const Vector2 &position) {
+  std::string label = ir_graph.generate_node_label(op_name);
+  auto *node = new ir::Node(op_name, label);
+  node->layout_hint = {position.x, position.y};
+  if (op_name == "PortInput") {
+    node->shape_dims = {1};
+    node->values = {0.0f};
   }
-  if (block->definition->name == "PortOutput") {
-    leafs.push_back(block);
-  }
-  topology_dirty = true;
-  refresh_orphans();
+  ir_graph.add_node(node);
+  auto block = std::make_unique<Block>(node, position);
+  block->update_height();
+  Block *block_ptr = block.get();
+  register_block(block_ptr);
+  blocks.push_back(std::move(block));
+  return block_ptr;
 }
 
-void Graph::clear() {
-  if (input_state->active_block)
+void UIGraph::remove_block(Block *block) {
+  if (input_state->active_node == block->node)
     reset_input_state(*input_state);
+  if (last_click_block == block)
+    last_click_block = nullptr;
+
+  unregister_block(block);
+  ir_graph.remove_node(block->node);
+
+  blocks.erase(std::remove_if(blocks.begin(), blocks.end(),
+                              [block](const std::unique_ptr<Block> &b) {
+                                return b.get() == block;
+                              }),
+               blocks.end());
+}
+
+void UIGraph::connect(Block *parent, Block *child, size_t out_port_index,
+                      size_t in_port_index) {
+  ir_graph.connect(parent->node, child->node, out_port_index, in_port_index);
+}
+
+void UIGraph::disconnect(Block *parent, Block *child, size_t out_port_index,
+                         size_t in_port_index) {
+  ir_graph.disconnect(parent->node, child->node, out_port_index, in_port_index);
+}
+
+void UIGraph::clear() {
+  reset_input_state(*input_state);
   blocks.clear();
-  orphans.clear();
-  roots.clear();
-  leafs.clear();
+  node_to_block.clear();
+  ir_graph.clear();
   dragging = false;
   dragged_block = nullptr;
   last_click_block = nullptr;
   connection_state = {};
   shape_popup = {};
-  topology_dirty = true;
   inference_ran = false;
 }
 
-void Graph::push_notification(const std::string &msg, bool is_error) {
+void UIGraph::rebuild_from_ir() {
+  reset_input_state(*input_state);
+  blocks.clear();
+  node_to_block.clear();
+  dragging = false;
+  dragged_block = nullptr;
+  last_click_block = nullptr;
+  connection_state = {};
+  shape_popup = {};
+
+  for (const auto &node_ptr : ir_graph.nodes) {
+    ir::Node *node = node_ptr.get();
+    Vector2 pos = {node->layout_hint.x, node->layout_hint.y};
+    auto block = std::make_unique<Block>(node, pos);
+    block->update_height();
+    register_block(block.get());
+    blocks.push_back(std::move(block));
+  }
+}
+
+void UIGraph::disable_debug() {
+  debug_mode = false;
+  for (const auto &node_ptr : ir_graph.nodes) {
+    node_ptr->has_debug_values = false;
+  }
+}
+
+void UIGraph::push_notification(const std::string &msg, bool is_error) {
   notifications.push_back({msg, is_error, GetTime() + 5.0});
 }
 
-std::vector<std::string> split(const std::string &s) {
+bool UIGraph::popup_active() const { return shape_popup.active; }
+
+void UIGraph::open_shape_popup(Block *block) {
+  ir::Node *node = block->node;
+  shape_popup.target = node;
+  shape_popup.pending_rank = (int)node->shape_dims.size();
+  shape_popup.pending_dims[0] =
+      node->shape_dims.size() >= 1 ? node->shape_dims[0] : 1;
+  shape_popup.pending_dims[1] =
+      node->shape_dims.size() >= 2 ? node->shape_dims[1] : 1;
+  shape_popup.pending_dims[2] =
+      node->shape_dims.size() >= 3 ? node->shape_dims[2] : 1;
+  shape_popup.active = true;
+}
+
+Block *UIGraph::find_block_at(Vector2 cursor_pos) const {
+  for (const auto &block_ptr : blocks) {
+    Block *block = block_ptr.get();
+    Rectangle block_rect = {block->position.x, block->position.y, block->width,
+                            block->height};
+    if (CheckCollisionPointRec(cursor_pos, block_rect))
+      return block;
+  }
+  return nullptr;
+}
+
+PortRef UIGraph::find_port_at(Vector2 cursor_pos,
+                              PortKind &out_port_kind) const {
+  for (const auto &block_ptr : blocks) {
+    Block *block = block_ptr.get();
+
+    if (block->node->spec->num_outputs > 0) {
+      auto out_ports = block->calculate_output_ports();
+      for (size_t i = 0; i < out_ports.size(); i++) {
+        float dx = cursor_pos.x - out_ports[i].x;
+        float dy = cursor_pos.y - out_ports[i].y;
+        if (dx * dx + dy * dy <= PORT_RADIUS * PORT_RADIUS) {
+          out_port_kind = PortKind::OUTPUT;
+          return {block, i};
+        }
+      }
+    }
+
+    if (block->node->spec->num_inputs > 0) {
+      auto in_ports = block->calculate_input_ports();
+      for (size_t i = 0; i < in_ports.size(); i++) {
+        float dx = cursor_pos.x - in_ports[i].x;
+        float dy = cursor_pos.y - in_ports[i].y;
+        if (dx * dx + dy * dy <= PORT_RADIUS * PORT_RADIUS) {
+          out_port_kind = PortKind::INPUT;
+          return {block, i};
+        }
+      }
+    }
+  }
+  return {};
+}
+
+void UIGraph::draw_grid(const Camera2D &camera) const {
+  float grid_spacing = 150.0f;
+  float inv_zoom = 1.0f / camera.zoom;
+  float half_w = GetScreenWidth() * inv_zoom;
+  float half_h = GetScreenHeight() * inv_zoom;
+
+  float start_x =
+      floorf((camera.target.x - half_w) / grid_spacing) * grid_spacing;
+  float start_y =
+      floorf((camera.target.y - half_h) / grid_spacing) * grid_spacing;
+  float end_x = camera.target.x + half_w;
+  float end_y = camera.target.y + half_h;
+
+  for (float x = start_x; x <= end_x; x += grid_spacing)
+    DrawLineV({x, start_y}, {x, end_y}, LIGHTGRAY);
+  for (float y = start_y; y <= end_y; y += grid_spacing)
+    DrawLineV({start_x, y}, {end_x, y}, LIGHTGRAY);
+}
+
+void UIGraph::draw(const Camera2D &camera) {
+  draw_grid(camera);
+  wire_tooltips.clear();
+
+  auto collect_wire_tooltip = [&](ir::Node *src, Vector2 from, Vector2 to) {
+    if (!debug_mode)
+      return;
+    Vector2 mid = {(from.x + to.x) * 0.5f, (from.y + to.y) * 0.5f};
+    std::string shape_text, value_text;
+    if (src->spec->name == "PortInput") {
+      shape_text = format_debug_shape_from_dims(src->shape_dims);
+      value_text = format_debug_values(src->values);
+    } else if (src->has_debug_values) {
+      shape_text = format_debug_shape(src->debug_output_shape);
+      value_text = format_debug_values(src->debug_output_values);
+    }
+    if (!shape_text.empty())
+      wire_tooltips.push_back({mid, shape_text, value_text});
+  };
+
+  auto draw_node = [&](ir::Node *node) {
+    Block *block = find_block_for_node(node);
+    if (!block)
+      return;
+    block->update_height();
+    block->draw(*input_state);
+
+    for (const auto &edge : node->outputs) {
+      Block *child_block = find_block_for_node(edge.node);
+      if (!child_block)
+        continue;
+
+      size_t in_port_index = 0;
+      for (const auto &in_edge : edge.node->inputs) {
+        if (in_edge.node == node) {
+          in_port_index = in_edge.port_index;
+          break;
+        }
+      }
+
+      Vector2 from = block->calculate_output_ports()[edge.port_index];
+      Vector2 to = child_block->calculate_input_ports()[in_port_index];
+      draw_wire(from, to);
+      collect_wire_tooltip(node, from, to);
+    }
+  };
+
+  if (!ir_graph.roots.empty()) {
+    std::deque<ir::Node *> queue(ir_graph.roots.begin(), ir_graph.roots.end());
+    std::unordered_set<ir::Node *> visited(ir_graph.roots.begin(),
+                                           ir_graph.roots.end());
+    while (!queue.empty()) {
+      ir::Node *current = queue.front();
+      queue.pop_front();
+      draw_node(current);
+      for (const auto &edge : current->outputs) {
+        if (visited.insert(edge.node).second)
+          queue.push_back(edge.node);
+      }
+    }
+  }
+
+  for (ir::Node *orphan : ir_graph.orphans) {
+    draw_node(orphan);
+  }
+
+  if (connection_state.active && connection_state.block) {
+    Vector2 from;
+    if (connection_state.from_port == PortKind::OUTPUT) {
+      from = connection_state.block
+                 ->calculate_output_ports()[connection_state.port_index];
+    } else {
+      from = connection_state.block
+                 ->calculate_input_ports()[connection_state.port_index];
+    }
+    Vector2 mouse_world = GetScreenToWorld2D(GetMousePosition(), camera);
+    draw_wire(from, mouse_world);
+  }
+}
+
+static std::vector<std::string> split_words(const std::string &s) {
   std::istringstream iss(s);
   return {std::istream_iterator<std::string>(iss),
           std::istream_iterator<std::string>()};
 }
 
-void Graph::draw_notifications() {
+void UIGraph::draw_notifications() {
   double now = GetTime();
   notifications.erase(
       std::remove_if(notifications.begin(), notifications.end(),
@@ -179,15 +364,15 @@ void Graph::draw_notifications() {
     Color fg = {255, 255, 255, alpha};
 
     float h = 36.0f;
-    size_t wcic = 4;
-    std::string message = "";
-    auto words = split(n.msg);
-    for (size_t i = 0; i < words.size(); ++i) {
-      if (i % wcic == 0 && i != 0) {
+    size_t words_per_line = 4;
+    std::string message;
+    auto words = split_words(n.msg);
+    for (size_t i = 0; i < words.size(); i++) {
+      if (i % words_per_line == 0 && i != 0) {
         message += "\n";
         h += 20.0f;
       }
-      message += std::string(words[i]) + " ";
+      message += words[i] + " ";
     }
     int tw = MeasureText(message.c_str(), 14);
     float w = tw + 36.0f;
@@ -195,135 +380,13 @@ void Graph::draw_notifications() {
     DrawRectangleRounded({x, y, w, h}, 0.2f, 6, bg);
     DrawRectangleRoundedLinesEx({x, y, w, h}, 0.2f, 6, 1.0f,
                                 {255, 255, 255, (unsigned char)(alpha / 2)});
-
     DrawText(message.c_str(), x + (w - tw) / 2.0f, y + 14, 14, fg);
     y += h + 6.0f;
   }
 }
 
-void Graph::remove_block(Block *block) {
-  for (auto input : block->inputs) {
-    auto &connections = input.block->outputs;
-    connections.erase(std::remove_if(connections.begin(), connections.end(),
-                                     [block](const Connection &c) {
-                                       return c.block == block;
-                                     }),
-                      connections.end());
-  }
-  for (auto output : block->outputs) {
-    auto &connections = output.block->inputs;
-    connections.erase(std::remove_if(connections.begin(), connections.end(),
-                                     [block](const Connection &c) {
-                                       return c.block == block;
-                                     }),
-                      connections.end());
-  }
-  auto it = std::find_if(blocks.begin(), blocks.end(),
-                         [block](const auto &bp) { return bp.get() == block; });
-  if (it->get()->definition->name == "PortInput") {
-    roots.erase(std::remove(roots.begin(), roots.end(), block), roots.end());
-  }
-  if (it->get()->definition->name == "PortOutput") {
-    leafs.erase(std::remove(leafs.begin(), leafs.end(), block), leafs.end());
-  }
-  if (it != blocks.end()) {
-    blocks.erase(it);
-  }
-  topology_dirty = true;
-  refresh_orphans();
-}
-
-void Graph::connect(Block *parent, Block *child, const size_t out_port_index,
-                    const size_t in_port_index) {
-  for (auto input : parent->inputs) {
-    if (input.block == child)
-      return;
-  }
-  if (child->inputs.size() >= child->definition->num_inputs) {
-    for (auto input : child->inputs) {
-      if (input.port_index == in_port_index) {
-        disconnect(input.block, child, input.port_index, in_port_index);
-        break;
-      }
-    }
-  }
-  parent->outputs.push_back({child, out_port_index});
-  child->inputs.push_back({parent, in_port_index});
-  topology_dirty = true;
-  refresh_orphans();
-}
-
-void Graph::disconnect(Block *parent, Block *child, const size_t out_port_index,
-                       const size_t in_port_index) {
-  parent->outputs.erase(
-      std::remove_if(parent->outputs.begin(), parent->outputs.end(),
-                     [child, out_port_index](const Connection &c) {
-                       return c.block == child &&
-                              c.port_index == out_port_index;
-                     }),
-      parent->outputs.end());
-  child->inputs.erase(
-      std::remove_if(child->inputs.begin(), child->inputs.end(),
-                     [parent, in_port_index](const Connection &c) {
-                       return c.block == parent &&
-                              c.port_index == in_port_index;
-                     }),
-      child->inputs.end());
-  topology_dirty = true;
-  refresh_orphans();
-}
-
-bool Graph::is_reachable_from_root(Block *block) {
-  if (roots.empty())
-    return false;
-
-  std::deque<Block *> queue(roots.begin(), roots.end());
-  std::unordered_set<Block *> visited(roots.begin(), roots.end());
-
-  while (!queue.empty()) {
-    Block *cur = queue.front();
-    queue.pop_front();
-    if (cur == block)
-      return true;
-    for (auto child : cur->outputs) {
-      if (visited.insert(child.block).second) {
-        queue.push_back(child.block);
-      }
-    }
-  }
-  return false;
-}
-
-void Graph::refresh_orphans() {
-  orphans.clear();
-  for (auto &bp : blocks) {
-    Block *b = bp.get();
-    if (std::find(roots.begin(), roots.end(), b) != roots.end())
-      continue;
-    if (!is_reachable_from_root(b)) {
-      orphans.push_back(b);
-    }
-  }
-}
-
-bool Graph::ready() { return true; }
-
-bool Graph::popup_active() const { return shape_popup.active; }
-
-void Graph::open_shape_popup(Block *b) {
-  shape_popup.target = b;
-  shape_popup.pending_rank = (int)b->shape_dims.size();
-  shape_popup.pending_dims[0] =
-      b->shape_dims.size() >= 1 ? b->shape_dims[0] : 1;
-  shape_popup.pending_dims[1] =
-      b->shape_dims.size() >= 2 ? b->shape_dims[1] : 1;
-  shape_popup.pending_dims[2] =
-      b->shape_dims.size() >= 3 ? b->shape_dims[2] : 1;
-  shape_popup.active = true;
-}
-
 static void draw_dim_stepper(const char *label_str, int value, float lx,
-                             float ly, float total_w, Vector2 mouse,
+                             float ly, float /*total_w*/, Vector2 mouse,
                              Rectangle &out_minus, Rectangle &out_plus) {
   const float btn_w = 26.0f, btn_h = 26.0f, cnt_w = 40.0f;
   int lbl_w = MeasureText(label_str, 13);
@@ -356,7 +419,7 @@ static void draw_dim_stepper(const char *label_str, int value, float lx,
            WHITE);
 }
 
-void Graph::draw_popup() {
+void UIGraph::draw_popup() {
   if (!shape_popup.active)
     return;
 
@@ -370,7 +433,6 @@ void Graph::draw_popup() {
 
   DrawRectangleRec({px, py, pw, ph}, {35, 35, 40, 255});
   DrawRectangleLinesEx({px, py, pw, ph}, 1.5f, {70, 70, 75, 255});
-
   DrawRectangleRec({px, py, pw, 40.0f}, {25, 25, 30, 255});
   DrawText("Configure Input Shape", px + 12, py + 12, 15, WHITE);
 
@@ -454,12 +516,13 @@ void Graph::draw_popup() {
         shape_popup.pending_dims[d]++;
     }
     if (ok_hov) {
+      ir::Node *target = shape_popup.target;
       std::vector<int> new_dims;
       for (int d = 0; d < rank; d++)
         new_dims.push_back(shape_popup.pending_dims[d]);
       int new_total = rank == 0 ? 1 : total;
-      shape_popup.target->shape_dims = new_dims;
-      shape_popup.target->values.resize(new_total, 0.0f);
+      target->shape_dims = new_dims;
+      target->values.resize(new_total, 0.0f);
       reset_input_state(*input_state);
       shape_popup.active = false;
       shape_popup.target = nullptr;
@@ -470,12 +533,13 @@ void Graph::draw_popup() {
   }
 
   if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_KP_ENTER)) {
+    ir::Node *target = shape_popup.target;
     std::vector<int> new_dims;
     for (int d = 0; d < rank; d++)
       new_dims.push_back(shape_popup.pending_dims[d]);
     int new_total = rank == 0 ? 1 : total;
-    shape_popup.target->shape_dims = new_dims;
-    shape_popup.target->values.resize(new_total, 0.0f);
+    target->shape_dims = new_dims;
+    target->values.resize(new_total, 0.0f);
     reset_input_state(*input_state);
     shape_popup.active = false;
     shape_popup.target = nullptr;
@@ -487,359 +551,7 @@ void Graph::draw_popup() {
   }
 }
 
-void Graph::draw_grid(const Camera2D &camera) {
-  float gridSpacing = 150.0f;
-  float invZoom = 1.0f / camera.zoom;
-  float halfW = GetScreenWidth() * invZoom;
-  float halfH = GetScreenHeight() * invZoom;
-
-  float startX = floorf((camera.target.x - halfW) / gridSpacing) * gridSpacing;
-  float startY = floorf((camera.target.y - halfH) / gridSpacing) * gridSpacing;
-  float endX = camera.target.x + halfW;
-  float endY = camera.target.y + halfH;
-
-  for (float x = startX; x <= endX; x += gridSpacing) {
-    DrawLineV({x, startY}, {x, endY}, LIGHTGRAY);
-  }
-  for (float y = startY; y <= endY; y += gridSpacing) {
-    DrawLineV({startX, y}, {endX, y}, LIGHTGRAY);
-  }
-}
-
-void Graph::draw(const Camera2D &camera) {
-  draw_grid(camera);
-  wire_tooltips.clear();
-
-  auto collect_wire_tooltip = [&](Block *src, Vector2 from, Vector2 to) {
-    if (!debug_mode)
-      return;
-    Vector2 mid = {(from.x + to.x) * 0.5f, (from.y + to.y) * 0.5f};
-    std::string shape_text, value_text;
-    if (src->definition->name == "PortInput") {
-      shape_text = format_debug_shape_from_dims(src->shape_dims);
-      value_text = format_debug_values(src->values);
-    } else if (src->has_debug_values) {
-      shape_text = format_debug_shape(src->debug_output_shape);
-      value_text = format_debug_values(src->debug_output_values);
-    }
-    if (!shape_text.empty())
-      wire_tooltips.push_back({mid, shape_text, value_text});
-  };
-
-  if (!roots.empty()) {
-    std::deque<Block *> queue(roots.begin(), roots.end());
-    std::unordered_set<Block *> visited(roots.begin(), roots.end());
-
-    while (!queue.empty()) {
-      Block *curr = queue.front();
-      queue.pop_front();
-      curr->draw(*this->input_state);
-      curr->height = curr->calculate_height();
-
-      for (auto child : curr->outputs) {
-        if (visited.insert(child.block).second) {
-          queue.push_back(child.block);
-        }
-        size_t in_port_index =
-            std::find_if(
-                child.block->inputs.begin(), child.block->inputs.end(),
-                [curr](const Connection &c) { return c.block == curr; })
-                ->port_index;
-
-        Vector2 from = curr->calculate_output_ports()[child.port_index];
-        Vector2 to = child.block->calculate_input_ports()[in_port_index];
-        draw_wire(from, to);
-        collect_wire_tooltip(curr, from, to);
-      }
-    }
-  }
-
-  for (auto *orphan : orphans) {
-    orphan->draw(*this->input_state);
-    orphan->height = orphan->calculate_height();
-
-    for (auto child : orphan->outputs) {
-      size_t in_port_index =
-          std::find_if(
-              child.block->inputs.begin(), child.block->inputs.end(),
-              [orphan](const Connection &c) { return c.block == orphan; })
-              ->port_index;
-      Vector2 from = orphan->calculate_output_ports()[child.port_index];
-      Vector2 to = child.block->calculate_input_ports()[in_port_index];
-      draw_wire(from, to);
-      collect_wire_tooltip(orphan, from, to);
-    }
-  }
-
-  if (connection_state.active && connection_state.connection.block) {
-    Vector2 from;
-    if (connection_state.from_port == PortKind::OUTPUT) {
-      from = connection_state.connection.block->calculate_output_ports()[0];
-    } else {
-      from = connection_state.connection.block->calculate_input_ports()[0];
-    }
-    Vector2 mouse_world = GetScreenToWorld2D(GetMousePosition(), camera);
-    draw_wire(from, mouse_world);
-  }
-}
-
-Block *Graph::find_block_at(Vector2 cursor_pos) {
-  for (auto &bp : blocks) {
-    Block *b = bp.get();
-    float h = b->height;
-    Rectangle block_rect = {b->position.x, b->position.y, b->width, h};
-    if (CheckCollisionPointRec(cursor_pos, block_rect)) {
-      return b;
-    }
-  }
-  return nullptr;
-}
-
-Connection Graph::find_port_at(Vector2 cursor_pos, PortKind &out_port) {
-  for (auto &bp : blocks) {
-    Block *b = bp.get();
-    auto definition = b->definition;
-
-    if (definition->num_outputs > 0) {
-      auto out_ports = b->calculate_output_ports();
-      for (size_t i = 0; i < out_ports.size(); i++) {
-        float dx = cursor_pos.x - out_ports[i].x;
-        float dy = cursor_pos.y - out_ports[i].y;
-        if (dx * dx + dy * dy <= PORT_RADIUS * PORT_RADIUS) {
-          out_port = PortKind::OUTPUT;
-          return {b, i};
-        }
-      }
-    }
-
-    if (definition->num_inputs > 0) {
-      auto in_ports = b->calculate_input_ports();
-      for (size_t i = 0; i < in_ports.size(); i++) {
-        float dx = cursor_pos.x - in_ports[i].x;
-        float dy = cursor_pos.y - in_ports[i].y;
-        if (dx * dx + dy * dy <= PORT_RADIUS * PORT_RADIUS) {
-          out_port = PortKind::INPUT;
-          return {b, i};
-        }
-      }
-    }
-  }
-
-  return {nullptr, 99};
-}
-
-void Graph::update(const Camera2D &camera) {
-  if (shape_popup.active)
-    return;
-
-  Vector2 mouse_screen = GetMousePosition();
-  Vector2 mouse_world = GetScreenToWorld2D(mouse_screen, camera);
-
-  PortKind kind;
-  auto *hovered_block = find_block_at(mouse_world);
-  auto hovered_port = find_port_at(mouse_world, kind);
-  if (hovered_block != NULL) {
-    SetMouseCursor(MOUSE_CURSOR_POINTING_HAND);
-  } else if (hovered_port.block == NULL) {
-    SetMouseCursor(MOUSE_CURSOR_CROSSHAIR);
-  } else {
-    SetMouseCursor(MOUSE_CURSOR_DEFAULT);
-  }
-
-  if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
-    if (this->input_state->active_block != nullptr) {
-      reset_input_state(*this->input_state);
-    }
-
-    PortKind clicked_port;
-    auto connection = find_port_at(mouse_world, clicked_port);
-    if (connection.block) {
-      connection_state.connection.block = connection.block;
-      connection_state.connection.port_index = connection.port_index;
-      connection_state.from_port = clicked_port;
-      connection_state.active = true;
-      return;
-    }
-
-    bool clicked_field = false;
-    Block *clicked = find_block_at(mouse_world);
-    if (!clicked) {
-      return;
-    }
-    Block &b = *clicked;
-
-    if (b.definition->name == "PortInput") {
-      Rectangle header_rect = {b.position.x, b.position.y, b.width,
-                               IO_FIELD_START_H};
-      if (CheckCollisionPointRec(mouse_world, header_rect)) {
-        double now = GetTime();
-        if (now - last_click_time < 0.35 && last_click_block == &b) {
-          open_shape_popup(&b);
-          last_click_block = nullptr;
-          return;
-        }
-        last_click_time = now;
-        last_click_block = &b;
-      }
-    }
-
-    auto field_rects = b.calculate_field_rects();
-    for (size_t fi = 0; fi < field_rects.size() && fi < b.values.size(); fi++) {
-      if (CheckCollisionPointRec(mouse_world, field_rects[fi])) {
-        if (this->input_state->active_block != nullptr &&
-            this->input_state->active_field >= 0) {
-          Block &prev = *this->input_state->active_block;
-          float val = (float)atof(this->input_state->buffer);
-          prev.values[this->input_state->active_field] = val;
-        }
-
-        this->input_state->active_block = &b;
-        this->input_state->active_field = (int)fi;
-        snprintf(this->input_state->buffer, sizeof(this->input_state->buffer),
-                 "%.2f", b.values[fi]);
-        this->input_state->cursor = (int)strlen(this->input_state->buffer);
-        clicked_field = true;
-        break;
-      }
-    }
-
-    this->dragging = true;
-    this->dragged_block = &b;
-    this->drag_offset = {mouse_world.x - b.position.x,
-                         mouse_world.y - b.position.y};
-
-    if (!clicked_field && this->input_state->active_block != nullptr) {
-      Block &prev = *this->input_state->active_block;
-      float val = (float)atof(this->input_state->buffer);
-      prev.values[this->input_state->active_field] = val;
-      reset_input_state(*this->input_state);
-    }
-  }
-
-  if (IsMouseButtonPressed(MOUSE_RIGHT_BUTTON)) {
-    Block *clicked = find_block_at(mouse_world);
-    if (clicked != NULL) {
-      remove_block(clicked);
-    }
-
-    PortKind clicked_port;
-    Connection target = find_port_at(mouse_world, clicked_port);
-    if (target.block) {
-      if (clicked_port == PortKind::OUTPUT) {
-        auto outputs = target.block->outputs;
-        for (auto output : outputs) {
-          disconnect(target.block, output.block, output.port_index,
-                     target.port_index);
-        }
-      } else {
-        auto inputs = target.block->inputs;
-        for (auto input : inputs) {
-          disconnect(input.block, target.block, input.port_index,
-                     target.port_index);
-        }
-      }
-    }
-  }
-
-  if (connection_state.active && IsMouseButtonReleased(MOUSE_LEFT_BUTTON)) {
-    PortKind target_port;
-    Connection target = find_port_at(mouse_world, target_port);
-
-    printf("target: %s, target_port: %zu\n",
-           target.block ? target.block->label.c_str() : "null",
-           target.port_index);
-
-    if (target.block && target.block != connection_state.connection.block) {
-      if (connection_state.from_port == PortKind::OUTPUT &&
-          target_port == PortKind::INPUT) {
-        connect(connection_state.connection.block, target.block,
-                connection_state.connection.port_index, target.port_index);
-      } else if (connection_state.from_port == PortKind::INPUT &&
-                 target_port == PortKind::OUTPUT) {
-        connect(target.block, connection_state.connection.block,
-                target.port_index, connection_state.connection.port_index);
-      }
-    }
-
-    connection_state.active = false;
-    connection_state.connection.block = nullptr;
-  }
-
-  if (this->input_state->active_block != nullptr) {
-    int key = GetCharPressed();
-    while (key > 0) {
-      if ((key >= '0' && key <= '9') || key == '-' || key == '.') {
-        int len = (int)strlen(this->input_state->buffer);
-        if (len < 30) {
-          this->input_state->buffer[len] = (char)key;
-          this->input_state->buffer[len + 1] = '\0';
-          this->input_state->cursor++;
-        }
-      }
-      key = GetCharPressed();
-    }
-
-    if (IsKeyPressed(KEY_BACKSPACE)) {
-      int len = (int)strlen(this->input_state->buffer);
-      if (len > 0) {
-        this->input_state->buffer[len - 1] = '\0';
-        this->input_state->cursor--;
-      }
-    }
-
-    if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_KP_ENTER)) {
-      Block &b = *this->input_state->active_block;
-      float val = (float)atof(this->input_state->buffer);
-      b.values[this->input_state->active_field] = val;
-      reset_input_state(*this->input_state);
-    }
-
-    if (IsKeyPressed(KEY_TAB) && IsKeyDown(KEY_LEFT_SHIFT)) {
-      Block &b = *this->input_state->active_block;
-      float val = (float)atof(this->input_state->buffer);
-      b.values[this->input_state->active_field] = val;
-
-      int previous_field = this->input_state->active_field - 1;
-      if (previous_field >= 0) {
-        this->input_state->active_field = previous_field;
-        snprintf(this->input_state->buffer, sizeof(this->input_state->buffer),
-                 "%.2f", b.values[previous_field]);
-        this->input_state->cursor = (int)strlen(this->input_state->buffer);
-      } else {
-        reset_input_state(*this->input_state);
-      }
-
-    } else if (IsKeyPressed(KEY_TAB)) {
-      Block &b = *this->input_state->active_block;
-      float val = (float)atof(this->input_state->buffer);
-      b.values[this->input_state->active_field] = val;
-
-      int next_field = this->input_state->active_field + 1;
-      if (next_field < (int)b.calculate_field_rects().size()) {
-        this->input_state->active_field = next_field;
-        snprintf(this->input_state->buffer, sizeof(this->input_state->buffer),
-                 "%.2f", b.values[next_field]);
-        this->input_state->cursor = (int)strlen(this->input_state->buffer);
-      } else {
-        reset_input_state(*this->input_state);
-      }
-    }
-  }
-
-  if (this->dragging && IsMouseButtonDown(MOUSE_LEFT_BUTTON)) {
-    Block &b = *this->dragged_block;
-    b.position.x = mouse_world.x - this->drag_offset.x;
-    b.position.y = mouse_world.y - this->drag_offset.y;
-  }
-
-  if (this->dragging && IsMouseButtonReleased(MOUSE_LEFT_BUTTON)) {
-    this->dragging = false;
-    this->dragged_block = nullptr;
-  }
-}
-
-void Graph::draw_wire_tooltips(
-    const Camera2D &camera) { // TODO: Dynamic support for differnet ranks
+void UIGraph::draw_wire_tooltips(const Camera2D &camera) {
   const int fs = 12;
   int sw = GetScreenWidth();
   int sh = GetScreenHeight();
@@ -872,6 +584,204 @@ void Graph::draw_wire_tooltips(
   }
 }
 
+void UIGraph::update(const Camera2D &camera) {
+  if (shape_popup.active)
+    return;
+
+  Vector2 mouse_screen = GetMousePosition();
+  Vector2 mouse_world = GetScreenToWorld2D(mouse_screen, camera);
+
+  PortKind kind;
+  Block *hovered_block = find_block_at(mouse_world);
+  PortRef hovered_port = find_port_at(mouse_world, kind);
+  if (hovered_block != nullptr) {
+    SetMouseCursor(MOUSE_CURSOR_POINTING_HAND);
+  } else if (!hovered_port.valid()) {
+    SetMouseCursor(MOUSE_CURSOR_CROSSHAIR);
+  } else {
+    SetMouseCursor(MOUSE_CURSOR_DEFAULT);
+  }
+
+  if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
+    if (input_state->active_node != nullptr)
+      reset_input_state(*input_state);
+
+    PortKind clicked_port_kind;
+    PortRef port_ref = find_port_at(mouse_world, clicked_port_kind);
+    if (port_ref.valid()) {
+      connection_state.block = port_ref.block;
+      connection_state.port_index = port_ref.port_index;
+      connection_state.from_port = clicked_port_kind;
+      connection_state.active = true;
+      return;
+    }
+
+    Block *clicked = find_block_at(mouse_world);
+    if (!clicked)
+      return;
+
+    if (clicked->node->spec->name == "PortInput") {
+      Rectangle header_rect = {clicked->position.x, clicked->position.y,
+                               clicked->width, IO_FIELD_START_H};
+      if (CheckCollisionPointRec(mouse_world, header_rect)) {
+        double now = GetTime();
+        if (now - last_click_time < 0.35 && last_click_block == clicked) {
+          open_shape_popup(clicked);
+          last_click_block = nullptr;
+          return;
+        }
+        last_click_time = now;
+        last_click_block = clicked;
+      }
+    }
+
+    bool clicked_field = false;
+    auto field_rects = clicked->calculate_field_rects();
+    for (size_t fi = 0;
+         fi < field_rects.size() && fi < clicked->node->values.size(); fi++) {
+      if (CheckCollisionPointRec(mouse_world, field_rects[fi])) {
+        if (input_state->active_node != nullptr &&
+            input_state->active_field >= 0) {
+          float val = (float)atof(input_state->buffer);
+          input_state->active_node->values[input_state->active_field] = val;
+        }
+        input_state->active_node = clicked->node;
+        input_state->active_field = (int)fi;
+        snprintf(input_state->buffer, sizeof(input_state->buffer), "%.2f",
+                 clicked->node->values[fi]);
+        input_state->cursor = (int)strlen(input_state->buffer);
+        clicked_field = true;
+        break;
+      }
+    }
+
+    dragging = true;
+    dragged_block = clicked;
+    drag_offset = {mouse_world.x - clicked->position.x,
+                   mouse_world.y - clicked->position.y};
+
+    if (!clicked_field && input_state->active_node != nullptr) {
+      float val = (float)atof(input_state->buffer);
+      input_state->active_node->values[input_state->active_field] = val;
+      reset_input_state(*input_state);
+    }
+  }
+
+  if (IsMouseButtonPressed(MOUSE_RIGHT_BUTTON)) {
+    Block *clicked = find_block_at(mouse_world);
+    if (clicked)
+      remove_block(clicked);
+
+    PortKind clicked_port_kind;
+    PortRef port_ref = find_port_at(mouse_world, clicked_port_kind);
+    if (port_ref.valid()) {
+      if (clicked_port_kind == PortKind::OUTPUT) {
+        auto outputs = port_ref.block->node->outputs;
+        for (const auto &edge : outputs) {
+          Block *child_block = find_block_for_node(edge.node);
+          if (child_block)
+            disconnect(port_ref.block, child_block, edge.port_index,
+                       port_ref.port_index);
+        }
+      } else {
+        auto inputs = port_ref.block->node->inputs;
+        for (const auto &edge : inputs) {
+          Block *parent_block = find_block_for_node(edge.node);
+          if (parent_block)
+            disconnect(parent_block, port_ref.block, edge.port_index,
+                       port_ref.port_index);
+        }
+      }
+    }
+  }
+
+  if (connection_state.active && IsMouseButtonReleased(MOUSE_LEFT_BUTTON)) {
+    PortKind target_port_kind;
+    PortRef target = find_port_at(mouse_world, target_port_kind);
+
+    if (target.valid() && target.block != connection_state.block) {
+      if (connection_state.from_port == PortKind::OUTPUT &&
+          target_port_kind == PortKind::INPUT) {
+        connect(connection_state.block, target.block,
+                connection_state.port_index, target.port_index);
+      } else if (connection_state.from_port == PortKind::INPUT &&
+                 target_port_kind == PortKind::OUTPUT) {
+        connect(target.block, connection_state.block, target.port_index,
+                connection_state.port_index);
+      }
+    }
+    connection_state.active = false;
+    connection_state.block = nullptr;
+  }
+
+  if (input_state->active_node != nullptr) {
+    int key = GetCharPressed();
+    while (key > 0) {
+      if ((key >= '0' && key <= '9') || key == '-' || key == '.') {
+        int len = (int)strlen(input_state->buffer);
+        if (len < 30) {
+          input_state->buffer[len] = (char)key;
+          input_state->buffer[len + 1] = '\0';
+          input_state->cursor++;
+        }
+      }
+      key = GetCharPressed();
+    }
+
+    if (IsKeyPressed(KEY_BACKSPACE)) {
+      int len = (int)strlen(input_state->buffer);
+      if (len > 0) {
+        input_state->buffer[len - 1] = '\0';
+        input_state->cursor--;
+      }
+    }
+
+    if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_KP_ENTER)) {
+      float val = (float)atof(input_state->buffer);
+      input_state->active_node->values[input_state->active_field] = val;
+      reset_input_state(*input_state);
+    }
+
+    if (IsKeyPressed(KEY_TAB) && IsKeyDown(KEY_LEFT_SHIFT)) {
+      float val = (float)atof(input_state->buffer);
+      input_state->active_node->values[input_state->active_field] = val;
+      int previous_field = input_state->active_field - 1;
+      if (previous_field >= 0) {
+        input_state->active_field = previous_field;
+        snprintf(input_state->buffer, sizeof(input_state->buffer), "%.2f",
+                 input_state->active_node->values[previous_field]);
+        input_state->cursor = (int)strlen(input_state->buffer);
+      } else {
+        reset_input_state(*input_state);
+      }
+    } else if (IsKeyPressed(KEY_TAB)) {
+      Block *active_block = find_block_for_node(input_state->active_node);
+      float val = (float)atof(input_state->buffer);
+      input_state->active_node->values[input_state->active_field] = val;
+      int next_field = input_state->active_field + 1;
+      if (active_block &&
+          next_field < (int)active_block->calculate_field_rects().size()) {
+        input_state->active_field = next_field;
+        snprintf(input_state->buffer, sizeof(input_state->buffer), "%.2f",
+                 input_state->active_node->values[next_field]);
+        input_state->cursor = (int)strlen(input_state->buffer);
+      } else {
+        reset_input_state(*input_state);
+      }
+    }
+  }
+
+  if (dragging && IsMouseButtonDown(MOUSE_LEFT_BUTTON)) {
+    dragged_block->position.x = mouse_world.x - drag_offset.x;
+    dragged_block->position.y = mouse_world.y - drag_offset.y;
+  }
+
+  if (dragging && IsMouseButtonReleased(MOUSE_LEFT_BUTTON)) {
+    dragging = false;
+    dragged_block = nullptr;
+  }
+}
+
 void draw_wire(const Vector2 &from, const Vector2 &to) {
   float dx = (to.x - from.x) * 0.5f;
   Vector2 cp1 = {from.x + dx, from.y};
@@ -893,6 +803,8 @@ void draw_wire(const Vector2 &from, const Vector2 &to) {
 }
 
 void reset_input_state(InputFieldState &input_state) {
-  input_state.active_block = nullptr;
+  input_state.active_node = nullptr;
   input_state.active_field = -1;
 }
+
+} // namespace ui

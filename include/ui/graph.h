@@ -1,8 +1,13 @@
+#pragma once
+#include "ir/graph.h"
 #include "raylib.h"
 #include "ui/block.h"
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <vector>
+
+namespace ui {
 
 struct Notification {
   std::string msg;
@@ -10,38 +15,33 @@ struct Notification {
   double expire;
 };
 
-#pragma once
-#ifndef GRAPH_H
-#define GRAPH_H
+struct ConnectionState {
+  Block *block = nullptr;
+  size_t port_index = 0;
+  PortKind from_port = PortKind::OUTPUT;
+  bool active = false;
+};
 
-class Graph {
-private:
-  Block *dragged_block;
+struct PortRef {
+  Block *block = nullptr;
+  size_t port_index = 0;
+  bool valid() const { return block != nullptr; }
+};
 
-  Block *find_block_at(Vector2 cursor_pos);
-  Connection find_port_at(Vector2 cursor_pos, PortKind &out_port);
-  void draw_grid(const Camera2D &camera);
-  int count_blocks_with_type(std::string type);
-  bool block_label_exists(const std::string &label);
-
+class UIGraph {
 public:
-  std::vector<std::unique_ptr<Block>> blocks;
-  std::vector<Block *> orphans;
+  ir::Graph ir_graph;
 
-  std::vector<Block *> roots;
-  std::vector<Block *> leafs;
+  bool debug_mode = false;
+  bool inference_ran = false;
 
   std::unique_ptr<InputFieldState> input_state;
   ShapePopupState shape_popup;
-  bool inference_ran;
   ConnectionState connection_state;
-  bool dragging;
-  bool topology_dirty;
-  Vector2 drag_offset;
-
+  bool dragging = false;
+  Vector2 drag_offset = {};
   double last_click_time = 0.0;
   Block *last_click_block = nullptr;
-  bool debug_mode = false;
 
   std::vector<Notification> notifications;
 
@@ -52,37 +52,43 @@ public:
   };
   std::vector<WireTooltip> wire_tooltips;
 
-  Graph(const size_t shape);
+  explicit UIGraph(size_t initial_shape);
 
-  std::string generate_block_label(const std::string op);
-  void push_block(Block *block);
+  Block *add_block(const std::string &op_name, const Vector2 &position);
   void remove_block(Block *block);
-  void connect(Block *parent, Block *child, const size_t out_port_index,
-               const size_t in_port_index);
-  void disconnect(Block *parent, Block *child, const size_t out_port_index,
-                  const size_t in_port_index);
-
+  void connect(Block *parent, Block *child, size_t out_port_index,
+               size_t in_port_index);
+  void disconnect(Block *parent, Block *child, size_t out_port_index,
+                  size_t in_port_index);
   void clear();
-  void inference();
+  void rebuild_from_ir();
+  void disable_debug();
+
   void draw(const Camera2D &camera);
   void draw_wire_tooltips(const Camera2D &camera);
   void draw_popup();
   void draw_notifications();
   void push_notification(const std::string &msg, bool is_error);
   void update(const Camera2D &camera);
-  bool ready();
+
   bool popup_active() const;
-  void open_shape_popup(Block *b);
+  void open_shape_popup(Block *block);
+
+  Block *find_block_for_node(ir::Node *node) const;
 
 private:
-  void refresh_orphans();
-  bool is_reachable_from_root(Block *block);
+  std::vector<std::unique_ptr<Block>> blocks;
+  std::unordered_map<ir::Node *, Block *> node_to_block;
+  Block *dragged_block = nullptr;
+
+  Block *find_block_at(Vector2 cursor_pos) const;
+  PortRef find_port_at(Vector2 cursor_pos, PortKind &out_port_kind) const;
+  void draw_grid(const Camera2D &camera) const;
+  void register_block(Block *block);
+  void unregister_block(Block *block);
 };
 
 void draw_wire(const Vector2 &from, const Vector2 &to);
-
-void draw_ui(const Graph &graph);
-
 void reset_input_state(InputFieldState &input_state);
 
-#endif
+} // namespace ui
