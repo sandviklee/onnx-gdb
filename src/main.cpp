@@ -1,77 +1,74 @@
+#include "backend/backend.h"
 #include "raylib.h"
 #include "raymath.h"
 #include "rlgl.h"
-#include "romll/romll.h"
-#include "ui/block.h"
 #include "ui/filedlg.h"
 #include "ui/graph.h"
 #include "ui/toolbar.h"
 
-void do_library_action(Graph &graph, Toolbar &toolbar, const std::string &op) {
-  if (op.empty()) {
+static void do_library_action(ui::UIGraph &ui_graph, ui::Toolbar &toolbar,
+                              const std::string &op) {
+  if (op.empty())
     return;
-  }
-  Block *b =
-      new Block(op, graph.generate_block_label(op), Vector2{400.0f, 400.0f}, 1);
-  graph.push_block(b);
-  if (op == "PortInput") {
-    graph.open_shape_popup(b);
-  }
+  ui::Block *block = ui_graph.add_block(op, Vector2{400.0f, 400.0f});
+  if (op == "PortInput")
+    ui_graph.open_shape_popup(block);
   toolbar.show_library = false;
 }
 
-void do_toolbar_action(ROMLL &romll, Graph &graph, Toolbar &toolbar,
-                       const int action) {
-  if (action == -1) {
+static void do_toolbar_action(backend::ROMLL &romll, ui::UIGraph &ui_graph,
+                              ui::Toolbar &toolbar, int action) {
+  if (action == -1)
     return;
-  }
-  switch ((ToolbarButtonType)action) {
-  case ToolbarButtonType::OPEN_FILE: {
+  switch ((ui::ToolbarButtonType)action) {
+  case ui::ToolbarButtonType::OPEN_FILE: {
     std::string path = open_onnx_file_dialog();
     if (!path.empty()) {
       std::string msg;
       if (romll.load_onnx_file(path, msg)) {
+        ui_graph.rebuild_from_ir();
         if (msg.empty())
-          graph.push_notification("Model loaded successfully", false);
+          ui_graph.push_notification("Model loaded successfully", false);
         else
-          graph.push_notification("Loaded (warnings): " + msg, false);
+          ui_graph.push_notification("Loaded (warnings): " + msg, false);
       } else {
-        graph.push_notification("Import failed: " + msg, true);
+        ui_graph.push_notification("Import failed: " + msg, true);
       }
     }
     toolbar.show_library = false;
     break;
   }
-  case ToolbarButtonType::LIBRARY:
+  case ui::ToolbarButtonType::LIBRARY:
     toolbar.show_library = !toolbar.show_library;
     break;
-  case ToolbarButtonType::DEBUG:
-    if (graph.debug_mode) {
-      graph.debug_mode = false;
-      for (auto &bp : graph.blocks)
-        bp->has_debug_values = false;
+  case ui::ToolbarButtonType::DEBUG:
+    if (ui_graph.debug_mode) {
+      ui_graph.disable_debug();
     } else {
       try {
         romll.run_debug_inference();
+        ui_graph.debug_mode = true;
+        ui_graph.push_notification("Debug: wire values visible", false);
       } catch (const std::exception &e) {
-        graph.push_notification(std::string("Debug error: ") + e.what(), true);
+        ui_graph.push_notification(std::string("Debug error: ") + e.what(),
+                                   true);
       }
     }
     break;
-  case ToolbarButtonType::INFERENCE:
+  case ui::ToolbarButtonType::INFERENCE:
     try {
       romll.run_inference();
+      ui_graph.inference_ran = true;
     } catch (const std::exception &e) {
-      graph.push_notification(std::string("Inference error: ") + e.what(),
-                              true);
+      ui_graph.push_notification(std::string("Inference error: ") + e.what(),
+                                 true);
     }
-    if (graph.input_state->active_block != nullptr) {
-      reset_input_state(*graph.input_state);
-    }
+    if (ui_graph.input_state->active_node != nullptr)
+      ui::reset_input_state(*ui_graph.input_state);
     break;
-  case ToolbarButtonType::RESET:
-    graph.clear();
-    graph.push_notification("Graph cleared", false);
+  case ui::ToolbarButtonType::RESET:
+    ui_graph.clear();
+    ui_graph.push_notification("Graph cleared", false);
     break;
   }
 }
@@ -88,29 +85,33 @@ int main() {
   Camera2D camera = {};
   camera.zoom = 1.0f;
 
-  Graph graph = Graph(4);
-  ROMLL romll = ROMLL(graph);
-  size_t offset_x =
-      (std::size(all_types) / 2) * (TOOLBAR_BUTTON_SIZE + TOOLBAR_PADDING);
+  ui::UIGraph ui_graph(4);
+  backend::ROMLL romll(ui_graph.ir_graph,
+                       [&ui_graph](const std::string &msg, bool is_error) {
+                         ui_graph.push_notification(msg, is_error);
+                       });
+
+  size_t offset_x = (std::size(ui::all_toolbar_types) / 2) *
+                    (TOOLBAR_BUTTON_SIZE + TOOLBAR_PADDING);
   size_t offset_y = TOOLBAR_BUTTON_SIZE * 2;
-  Toolbar toolbar = Toolbar({float(config.window_width / 2 - offset_x),
-                             float(config.window_height - offset_y)},
-                            TOOLBAR_BUTTON_SIZE);
+  ui::Toolbar toolbar({float(config.window_width / 2 - offset_x),
+                       float(config.window_height - offset_y)},
+                      TOOLBAR_BUTTON_SIZE);
 
   while (!WindowShouldClose()) {
-    graph.update(camera);
+    ui_graph.update(camera);
 
-    if (!graph.popup_active()) {
+    if (!ui_graph.popup_active()) {
       if (toolbar.show_library) {
         std::string library_action = toolbar.library->handle_click();
-        do_library_action(graph, toolbar, library_action);
+        do_library_action(ui_graph, toolbar, library_action);
       }
 
       int toolbar_action = toolbar.handle_click();
-      do_toolbar_action(romll, graph, toolbar, toolbar_action);
+      do_toolbar_action(romll, ui_graph, toolbar, toolbar_action);
 
-      if (!graph.dragging && !graph.connection_state.active &&
-          graph.input_state->active_block == nullptr &&
+      if (!ui_graph.dragging && !ui_graph.connection_state.active &&
+          ui_graph.input_state->active_node == nullptr &&
           (IsMouseButtonDown(MOUSE_BUTTON_LEFT) ||
            IsMouseButtonDown(MOUSE_BUTTON_MIDDLE))) {
         Vector2 delta = GetMouseDelta();
@@ -122,10 +123,10 @@ int main() {
       if (IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL) ||
           IsKeyDown(KEY_LEFT_SUPER)) {
         if (wheel != 0) {
-          Vector2 mouseWorldPos =
+          Vector2 mouse_world_pos =
               GetScreenToWorld2D(GetMousePosition(), camera);
           camera.offset = GetMousePosition();
-          camera.target = mouseWorldPos;
+          camera.target = mouse_world_pos;
           float scale = 0.1f * wheel;
           camera.zoom = Clamp(expf(logf(camera.zoom) + scale), 0.125f, 64.0f);
         }
@@ -136,19 +137,18 @@ int main() {
     ClearBackground(RAYWHITE);
     BeginMode2D(camera);
 
-    graph.draw(camera);
+    ui_graph.draw(camera);
 
     EndMode2D();
 
-    graph.draw_wire_tooltips(camera);
+    ui_graph.draw_wire_tooltips(camera);
     toolbar.draw();
-    graph.draw_popup();
-    graph.draw_notifications();
+    ui_graph.draw_popup();
+    ui_graph.draw_notifications();
 
-    DrawText(
-        "Left/middle drag to pan. Ctrl+Scroll to zoom. Double-click PortInput "
-        "to configure shape.",
-        20, 22, 16, GRAY);
+    DrawText("Left/middle drag to pan. Ctrl+Scroll to zoom. "
+             "Double-click PortInput to configure shape.",
+             20, 22, 16, GRAY);
     DrawCircleV(GetMousePosition(), 3, DARKGRAY);
 
     EndDrawing();
