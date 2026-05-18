@@ -1,18 +1,11 @@
 cmake_minimum_required(VERSION 3.15)
-project(raylib_onnx_machine_learning_language LANGUAGES C CXX)
+project(onnx-gdb LANGUAGES C CXX)
 
 set(RAYLIB_VERSION 5.5)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-set(LINUX_ONNX_RUNTIME_LIB_DIR "onnxruntime-linux-x64-1.24.4") # This needs to be chnaged based on ONNX version and linux platform.
-
-find_package(MLIR REQUIRED CONFIG)
-include_directories(${MLIR_INCLUDE_DIRS})
-list(APPEND CMAKE_MODULE_PATH "${MLIR_CMAKE_DIR}")
-include(AddLLVM)
-include(TableGen)
-include(AddMLIR)
+set(LINUX_ONNX_RUNTIME_LIB_DIR "onnxruntime-linux-x64-1.24.4")
 
 if(WIN32)
   add_compile_options(/W4)
@@ -23,7 +16,6 @@ endif()
 
 include(fetchcontent)
 
-# NOTE: This includes the ONNX Runtime API through self install, read the README for more information
 if(NOT ONNXRUNTIME_ROOTDIR)
   if(APPLE)
     set(ONNXRUNTIME_ROOTDIR "/opt/homebrew/opt/onnxruntime")
@@ -34,7 +26,6 @@ if(NOT ONNXRUNTIME_ROOTDIR)
   endif()
 endif()
 
-# NOTE: This fetches the ONNX API
 fetchcontent_declare(
   onnx
   GIT_REPOSITORY https://github.com/onnx/onnx.git
@@ -43,9 +34,6 @@ fetchcontent_declare(
 set(ONNX_ML ON CACHE BOOL "" FORCE)
 set(BUILD_ONNX_PYTHON OFF CACHE BOOL "" FORCE)
 fetchcontent_makeavailable(onnx)
-
-# add_subdirectory(src/romll/Dialect/IR)
-# add_subdirectory(src/romll/Dialect/Transforms)
 
 find_package(raylib ${RAYLIB_VERSION} QUIET)
 if(NOT raylib_FOUND)
@@ -72,34 +60,46 @@ file(WRITE ${CMAKE_BINARY_DIR}/raygui_impl.c
   "#define RAYGUI_IMPLEMENTATION\n#include \"raygui.h\"\n"
 )
 
-add_library(romll src/romll/romll.cpp)
+add_library(ir
+    src/ir/operator.cpp
+    src/ir/node.cpp
+    src/ir/graph.cpp
+)
+target_include_directories(ir PUBLIC include)
+
+add_library(backend src/backend/backend.cpp)
 if(APPLE)
-  target_include_directories(romll PUBLIC
-  include
-  "${ONNXRUNTIME_ROOTDIR}/include/onnxruntime"
-  "${ONNXRUNTIME_ROOTDIR}/include/onnxruntime/core/session"
-)
+  target_include_directories(backend PUBLIC
+    include
+    "${ONNXRUNTIME_ROOTDIR}/include/onnxruntime"
+    "${ONNXRUNTIME_ROOTDIR}/include/onnxruntime/core/session"
+  )
 else()
-  target_include_directories(romll PUBLIC
-  include
-  "${ONNXRUNTIME_ROOTDIR}/include"
-)
+  target_include_directories(backend PUBLIC
+    include
+    "${ONNXRUNTIME_ROOTDIR}/include"
+  )
 endif()
-target_link_libraries(romll PUBLIC onnx romllui)
+target_link_libraries(backend PUBLIC onnx ir)
 
-add_library(romllui src/ui/toolbar.cpp src/ui/graph.cpp src/ui/block.cpp)
-target_include_directories(romllui PUBLIC include)
-target_link_libraries(romllui PUBLIC raylib)
+add_library(gdbui
+    src/ui/toolbar.cpp
+    src/ui/graph.cpp
+    src/ui/block.cpp
+    src/ui/library.cpp
+)
+target_include_directories(gdbui PUBLIC include)
+target_link_libraries(gdbui PUBLIC raylib ir)
 
-target_sources(romllui PRIVATE ${CMAKE_BINARY_DIR}/raygui_impl.c)
-target_include_directories(romllui PRIVATE ${raygui_SOURCE_DIR}/src)
+target_sources(gdbui PRIVATE ${CMAKE_BINARY_DIR}/raygui_impl.c)
+target_include_directories(gdbui PRIVATE ${raygui_SOURCE_DIR}/src)
 
 add_executable(${PROJECT_NAME} src/main.cpp src/ui/filedlg.cpp)
 target_link_directories(${PROJECT_NAME} PRIVATE
   "${ONNXRUNTIME_ROOTDIR}/lib"
 )
 target_include_directories(${PROJECT_NAME} PRIVATE include)
-target_link_libraries(${PROJECT_NAME} PRIVATE onnxruntime romll romllui)
+target_link_libraries(${PROJECT_NAME} PRIVATE onnxruntime backend gdbui)
 
 if(APPLE)
   set(CMAKE_OSX_DEPLOYMENT_TARGET "16.0" CACHE STRING "" FORCE)
@@ -110,5 +110,7 @@ if(APPLE)
   )
 endif()
 
-target_compile_options(romll PRIVATE -Wall -Wextra)
+target_compile_options(ir      PRIVATE -Wall -Wextra)
+target_compile_options(backend PRIVATE -Wall -Wextra)
+target_compile_options(gdbui   PRIVATE -Wall -Wextra)
 target_compile_options(${PROJECT_NAME} PRIVATE -Wall -Wextra)
