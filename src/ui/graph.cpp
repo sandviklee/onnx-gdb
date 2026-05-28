@@ -150,6 +150,7 @@ void UIGraph::clear() {
   last_click_block = nullptr;
   connection_state = {};
   shape_popup = {};
+  attr_popup = {};
   inference_ran = false;
 }
 
@@ -162,6 +163,7 @@ void UIGraph::rebuild_from_ir() {
   last_click_block = nullptr;
   connection_state = {};
   shape_popup = {};
+  attr_popup = {};
 
   for (const auto &node_ptr : ir_graph.nodes) {
     ir::Node *node = node_ptr.get();
@@ -184,7 +186,9 @@ void UIGraph::push_notification(const std::string &msg, bool is_error) {
   notifications.push_back({msg, is_error, GetTime() + 5.0});
 }
 
-bool UIGraph::popup_active() const { return shape_popup.active; }
+bool UIGraph::popup_active() const {
+  return shape_popup.active || attr_popup.active;
+}
 
 void UIGraph::open_shape_popup(Block *block) {
   ir::Node *node = block->node;
@@ -196,7 +200,205 @@ void UIGraph::open_shape_popup(Block *block) {
       node->shape_dims.size() >= 2 ? node->shape_dims[1] : 1;
   shape_popup.pending_dims[2] =
       node->shape_dims.size() >= 3 ? node->shape_dims[2] : 1;
+  shape_popup.pending_dims[3] =
+      node->shape_dims.size() >= 4 ? node->shape_dims[3] : 1;
+  shape_popup.pending_is_initializer = node->is_initializer;
   shape_popup.active = true;
+}
+
+static std::string attr_to_string(const ir::AttributeValue &av) {
+  char buf[64];
+  switch (av.type) {
+  case ir::AttrType::INT:
+    snprintf(buf, sizeof(buf), "%lld", (long long)av.i);
+    return buf;
+  case ir::AttrType::FLOAT:
+    snprintf(buf, sizeof(buf), "%g", av.f);
+    return buf;
+  case ir::AttrType::INTS: {
+    std::string s;
+    for (size_t i = 0; i < av.ints.size(); i++) {
+      if (i)
+        s += ",";
+      snprintf(buf, sizeof(buf), "%lld", (long long)av.ints[i]);
+      s += buf;
+    }
+    return s;
+  }
+  case ir::AttrType::FLOATS: {
+    std::string s;
+    for (size_t i = 0; i < av.floats.size(); i++) {
+      if (i)
+        s += ",";
+      snprintf(buf, sizeof(buf), "%g", av.floats[i]);
+      s += buf;
+    }
+    return s;
+  }
+  case ir::AttrType::STRING:
+    return av.s;
+  }
+  return "";
+}
+
+static void parse_into_attr(ir::AttributeValue &av, const std::string &buf) {
+  switch (av.type) {
+  case ir::AttrType::INT:
+    av.i = (int64_t)atoll(buf.c_str());
+    break;
+  case ir::AttrType::FLOAT:
+    av.f = (float)atof(buf.c_str());
+    break;
+  case ir::AttrType::INTS: {
+    av.ints.clear();
+    std::stringstream ss(buf);
+    std::string tok;
+    while (std::getline(ss, tok, ',')) {
+      if (!tok.empty())
+        av.ints.push_back((int64_t)atoll(tok.c_str()));
+    }
+    break;
+  }
+  case ir::AttrType::FLOATS: {
+    av.floats.clear();
+    std::stringstream ss(buf);
+    std::string tok;
+    while (std::getline(ss, tok, ',')) {
+      if (!tok.empty())
+        av.floats.push_back((float)atof(tok.c_str()));
+    }
+    break;
+  }
+  case ir::AttrType::STRING:
+    av.s = buf;
+    break;
+  }
+}
+
+void UIGraph::open_attr_popup(Block *block) {
+  ir::Node *node = block->node;
+  attr_popup = {};
+  attr_popup.target = node;
+  for (const auto &spec : node->spec->attributes) {
+    auto it = node->attributes.find(spec.name);
+    const ir::AttributeValue &av =
+        it != node->attributes.end() ? it->second : spec.default_value;
+    attr_popup.names.push_back(spec.name);
+    attr_popup.buffers.push_back(attr_to_string(av));
+  }
+  attr_popup.active = !attr_popup.names.empty();
+}
+
+void UIGraph::draw_attr_popup() {
+  if (!attr_popup.active)
+    return;
+
+  int sw = GetScreenWidth();
+  int sh = GetScreenHeight();
+  DrawRectangle(0, 0, sw, sh, {0, 0, 0, 120});
+
+  size_t n = attr_popup.names.size();
+  const float row_h = 32.0f;
+  const float pw = 360.0f;
+  float ph = 110.0f + (float)n * row_h + 70.0f;
+  float px = (sw - pw) / 2.0f;
+  float py = (sh - ph) / 2.0f;
+
+  DrawRectangleRec({px, py, pw, ph}, {35, 35, 40, 255});
+  DrawRectangleLinesEx({px, py, pw, ph}, 1.5f, {70, 70, 75, 255});
+  DrawRectangleRec({px, py, pw, 40.0f}, {25, 25, 30, 255});
+  std::string title = "Attributes: " + attr_popup.target->spec->name;
+  DrawText(title.c_str(), px + 12, py + 12, 15, WHITE);
+
+  Vector2 mouse = GetMousePosition();
+  float row_y = py + 60.0f;
+  const float label_w = 130.0f;
+
+  for (size_t i = 0; i < n; i++) {
+    DrawText(attr_popup.names[i].c_str(), px + 14, row_y + 6, 13, LIGHTGRAY);
+    Rectangle field = {px + 14 + label_w, row_y, pw - 28 - label_w, 24.0f};
+    bool focused = attr_popup.active_field == (int)i;
+    DrawRectangleRec(field, focused ? Color{55, 55, 70, 255}
+                                    : Color{50, 50, 58, 255});
+    DrawRectangleLinesEx(field, 1.0f,
+                         focused ? Color{120, 160, 220, 255}
+                                 : Color{80, 80, 90, 255});
+    DrawText(attr_popup.buffers[i].c_str(), field.x + 6, field.y + 4, 13,
+             WHITE);
+    if (focused && ((int)(GetTime() * 2)) % 2 == 0) {
+      int cur_x = field.x + 6 +
+                  MeasureText(attr_popup.buffers[i].c_str(), 13);
+      DrawLine(cur_x, field.y + 4, cur_x, field.y + field.height - 4, RED);
+    }
+    if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) &&
+        CheckCollisionPointRec(mouse, field))
+      attr_popup.active_field = (int)i;
+    row_y += row_h;
+  }
+
+  float bw = 90.0f, bh = 32.0f;
+  float by = py + ph - 42.0f;
+  Rectangle cancel_r = {px + 20, by, bw, bh};
+  Rectangle ok_r = {px + pw - 20 - bw, by, bw, bh};
+  bool cancel_hov = CheckCollisionPointRec(mouse, cancel_r);
+  bool ok_hov = CheckCollisionPointRec(mouse, ok_r);
+
+  DrawRectangleRec(cancel_r, cancel_hov ? Color{110, 55, 55, 255}
+                                        : Color{80, 40, 40, 255});
+  DrawRectangleLinesEx(cancel_r, 1.0f, {120, 60, 60, 255});
+  DrawText("Cancel", cancel_r.x + (bw - MeasureText("Cancel", 14)) / 2,
+           by + 9, 14, WHITE);
+  DrawRectangleRec(ok_r,
+                   ok_hov ? Color{55, 110, 55, 255} : Color{40, 80, 40, 255});
+  DrawRectangleLinesEx(ok_r, 1.0f, {60, 120, 60, 255});
+  DrawText("OK", ok_r.x + (bw - MeasureText("OK", 14)) / 2, by + 9, 14, WHITE);
+
+  if (attr_popup.active_field >= 0) {
+    int key = GetCharPressed();
+    while (key > 0) {
+      if ((key >= '0' && key <= '9') || key == '-' || key == '.' ||
+          key == ',') {
+        attr_popup.buffers[attr_popup.active_field].push_back((char)key);
+      }
+      key = GetCharPressed();
+    }
+    if (IsKeyPressed(KEY_BACKSPACE)) {
+      auto &b = attr_popup.buffers[attr_popup.active_field];
+      if (!b.empty())
+        b.pop_back();
+    }
+    if (IsKeyPressed(KEY_TAB)) {
+      attr_popup.active_field = (attr_popup.active_field + 1) % (int)n;
+    }
+  }
+
+  auto commit = [&]() {
+    ir::Node *target = attr_popup.target;
+    for (size_t i = 0; i < n; i++) {
+      auto it = target->attributes.find(attr_popup.names[i]);
+      if (it == target->attributes.end())
+        continue;
+      parse_into_attr(it->second, attr_popup.buffers[i]);
+    }
+    ir_graph.topology_dirty = true;
+  };
+
+  if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) {
+    if (ok_hov) {
+      commit();
+      attr_popup = {};
+    } else if (cancel_hov) {
+      attr_popup = {};
+    }
+  }
+
+  if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_KP_ENTER)) {
+    commit();
+    attr_popup = {};
+  }
+  if (IsKeyPressed(KEY_ESCAPE)) {
+    attr_popup = {};
+  }
 }
 
 Block *UIGraph::find_block_at(Vector2 cursor_pos) const {
@@ -427,7 +629,7 @@ void UIGraph::draw_popup() {
   int sh = GetScreenHeight();
   DrawRectangle(0, 0, sw, sh, {0, 0, 0, 120});
 
-  const float pw = 320.0f, ph = 320.0f;
+  const float pw = 320.0f, ph = 400.0f;
   float px = (sw - pw) / 2.0f;
   float py = (sh - ph) / 2.0f;
 
@@ -441,10 +643,11 @@ void UIGraph::draw_popup() {
   DrawText(block_lbl.c_str(), px + 14, py + 50, 14, LIGHTGRAY);
 
   DrawText("Rank:", px + 14, py + 74, 13, LIGHTGRAY);
-  const char *rank_labels[] = {"scalar", "vector", "matrix", "tensor"};
-  const float rbw = 62.0f, rbh = 26.0f, rbgap = 4.0f;
+  const char *rank_labels[] = {"scalar", "vector", "matrix", "tensor3",
+                               "tensor4"};
+  const float rbw = 56.0f, rbh = 26.0f, rbgap = 4.0f;
   float rx0 = px + 14;
-  for (int r = 0; r < 4; r++) {
+  for (int r = 0; r < 5; r++) {
     Rectangle rb = {rx0 + r * (rbw + rbgap), py + 90, rbw, rbh};
     bool sel = (shape_popup.pending_rank == r);
     bool hov = CheckCollisionPointRec(mouse, rb);
@@ -465,16 +668,26 @@ void UIGraph::draw_popup() {
   int rank = shape_popup.pending_rank;
   float dim_y_start = py + 152.0f;
   const float row_h = 34.0f;
-  const char *dim_names[] = {"D:", "R:", "C:"};
+  const char *dim_names_r1[] = {"D:"};
+  const char *dim_names_r2[] = {"R:", "C:"};
+  const char *dim_names_r3[] = {"D:", "R:", "C:"};
+  const char *dim_names_r4[] = {"N:", "C:", "H:", "W:"};
+  const char *const *dim_names = dim_names_r3;
+  if (rank == 1)
+    dim_names = dim_names_r1;
+  else if (rank == 2)
+    dim_names = dim_names_r2;
+  else if (rank == 4)
+    dim_names = dim_names_r4;
 
-  Rectangle minus_r[3], plus_r[3];
+  Rectangle minus_r[4], plus_r[4];
   if (rank == 0) {
     DrawText("1 value (no dimensions)", px + 14, dim_y_start + 4, 13, GRAY);
   } else {
     for (int d = 0; d < rank; d++) {
-      draw_dim_stepper(dim_names[3 - rank + d], shape_popup.pending_dims[d],
-                       px + 14, dim_y_start + d * row_h, pw - 28, mouse,
-                       minus_r[d], plus_r[d]);
+      draw_dim_stepper(dim_names[d], shape_popup.pending_dims[d], px + 14,
+                       dim_y_start + d * row_h, pw - 28, mouse, minus_r[d],
+                       plus_r[d]);
     }
   }
 
@@ -486,6 +699,21 @@ void UIGraph::draw_popup() {
            total == 1 ? "" : "s");
   DrawText(total_str, px + 14, py + ph - 60, 13,
            total > 1000 ? Color{200, 80, 80, 255} : LIGHTGRAY);
+
+  Rectangle init_box = {px + 14, py + ph - 100, 18.0f, 18.0f};
+  bool init_hov = CheckCollisionPointRec(mouse, init_box);
+  DrawRectangleRec(init_box, shape_popup.pending_is_initializer
+                                 ? Color{70, 120, 190, 255}
+                                 : Color{50, 50, 58, 255});
+  DrawRectangleLinesEx(init_box, 1.0f,
+                       init_hov ? Color{120, 160, 220, 255}
+                                : Color{90, 90, 100, 255});
+  if (shape_popup.pending_is_initializer)
+    DrawText("x", init_box.x + 4, init_box.y + 1, 16, WHITE);
+  DrawText("Export as weight (initializer)", px + 40, py + ph - 98, 13,
+           LIGHTGRAY);
+  if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && init_hov)
+    shape_popup.pending_is_initializer = !shape_popup.pending_is_initializer;
 
   float bw = 90.0f, bh = 32.0f;
   float by = py + ph - 42.0f;
@@ -523,6 +751,7 @@ void UIGraph::draw_popup() {
       int new_total = rank == 0 ? 1 : total;
       target->shape_dims = new_dims;
       target->values.resize(new_total, 0.0f);
+      target->is_initializer = shape_popup.pending_is_initializer;
       reset_input_state(*input_state);
       shape_popup.active = false;
       shape_popup.target = nullptr;
@@ -540,6 +769,7 @@ void UIGraph::draw_popup() {
     int new_total = rank == 0 ? 1 : total;
     target->shape_dims = new_dims;
     target->values.resize(new_total, 0.0f);
+    target->is_initializer = shape_popup.pending_is_initializer;
     reset_input_state(*input_state);
     shape_popup.active = false;
     shape_popup.target = nullptr;
@@ -585,7 +815,7 @@ void UIGraph::draw_wire_tooltips(const Camera2D &camera) {
 }
 
 void UIGraph::update(const Camera2D &camera) {
-  if (shape_popup.active)
+  if (shape_popup.active || attr_popup.active)
     return;
 
   Vector2 mouse_screen = GetMousePosition();
@@ -633,6 +863,16 @@ void UIGraph::update(const Camera2D &camera) {
         last_click_time = now;
         last_click_block = clicked;
       }
+    } else if (clicked->node->spec->name != "PortOutput" &&
+               !clicked->node->spec->attributes.empty()) {
+      double now = GetTime();
+      if (now - last_click_time < 0.35 && last_click_block == clicked) {
+        open_attr_popup(clicked);
+        last_click_block = nullptr;
+        return;
+      }
+      last_click_time = now;
+      last_click_block = clicked;
     }
 
     bool clicked_field = false;

@@ -33,14 +33,24 @@ int operator_category_order(ir::OperatorCategory category) {
 
 static void format_shape_label(const std::vector<int> &dims, char *buf,
                                int buf_size) {
+  std::string final;
   if (dims.empty())
-    snprintf(buf, buf_size, "scalar");
+    final = "scalar";
   else if (dims.size() == 1)
-    snprintf(buf, buf_size, "vec  [%d]", dims[0]);
+    final = "vec";
   else if (dims.size() == 2)
-    snprintf(buf, buf_size, "mat  [%dx%d]", dims[0], dims[1]);
+    final = "mat";
   else
-    snprintf(buf, buf_size, "tensor  [%dx%dx%d]", dims[0], dims[1], dims[2]);
+    final = "tensor";
+
+  final += "[";
+  final += std::to_string(dims[0]);
+  for (size_t i = 1; i < dims.size(); i++) {
+    final += "x" + std::to_string(dims[i]);
+  }
+  final += "]";
+
+  snprintf(buf, buf_size, "%s", final.c_str());
 }
 
 Block::Block(ir::Node *node, const Vector2 &position)
@@ -164,6 +174,14 @@ void Block::draw(const InputFieldState &input_state) const {
     int lbl_w = MeasureText(shape_label, 14);
     DrawText(shape_label, position.x + (width - lbl_w) / 2.0f, position.y + 36,
              14, DARKGRAY);
+    if (node->is_initializer) {
+      const char *tag = "weight";
+      int tw = MeasureText(tag, 11);
+      Rectangle badge = {position.x + width - tw - 14.0f, position.y + 8.0f,
+                         (float)tw + 8.0f, 16.0f};
+      DrawRectangleRounded(badge, 0.4f, 4, {70, 120, 190, 255});
+      DrawText(tag, badge.x + 4, badge.y + 2, 11, WHITE);
+    }
 
     int rank = (int)node->shape_dims.size();
     auto rects = calculate_field_rects();
