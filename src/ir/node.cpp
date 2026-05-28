@@ -3,6 +3,9 @@
 namespace ir {
 
 Node::Node(const std::string &op_name, const std::string &label)
-    : spec(&operator_registry().at(op_name)), label(label) {}
+    : spec(&operator_registry().at(op_name)), label(label) {
+  for (const auto &attr : spec->attributes)
+    attributes[attr.name] = attr.default_value;
+}
 
 } // namespace ir

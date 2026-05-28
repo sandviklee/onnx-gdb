@@ -2,6 +2,7 @@
 #include "ir/operator.h"
 #include <cstdint>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace ir {
@@ -9,34 +10,39 @@ namespace ir {
 class Node;
 
 struct Edge {
-    Node* node;
-    size_t port_index;
+  Node *node;
+  size_t port_index;
 };
 
 struct LayoutHint {
-    float x = 0.0f;
-    float y = 0.0f;
+  float x = 0.0f;
+  float y = 0.0f;
 };
 
 class Node {
 public:
-    const OperatorSpec* spec;
-    std::string label;
+  const OperatorSpec *spec;
+  std::string label;
 
-    std::vector<Edge> inputs;
-    std::vector<Edge> outputs;
+  std::vector<Edge> inputs;
+  std::vector<Edge> outputs;
 
-    std::vector<float> values;
-    std::vector<int> shape_dims;
-    bool has_results = false;
+  std::vector<float> values;
+  std::vector<int> shape_dims;
+  bool has_results = false;
+  bool is_initializer = false;
 
-    std::vector<float> debug_output_values;
-    std::vector<int64_t> debug_output_shape;
-    bool has_debug_values = false;
+  std::unordered_map<std::string, AttributeValue> attributes;
 
-    LayoutHint layout_hint;
+  std::vector<float> debug_output_values;
+  std::vector<int64_t> debug_output_shape;
+  bool has_debug_values = false;
 
-    Node(const std::string& op_name, const std::string& label);
+  std::string onnx_value_name;
+
+  LayoutHint layout_hint;
+
+  Node(const std::string &op_name, const std::string &label);
 };
 
 } // namespace ir
