@@ -6,12 +6,19 @@
 
 namespace ui {
 
-enum class ToolbarButtonType { OPEN_FILE, LIBRARY, DEBUG, INFERENCE, RESET };
+enum class ToolbarButtonType {
+  OPEN_FILE,
+  LIBRARY,
+  DEBUG,
+  INFERENCE,
+  RESET,
+  DOWNLOAD
+};
 
 constexpr ToolbarButtonType all_toolbar_types[] = {
     ToolbarButtonType::OPEN_FILE, ToolbarButtonType::LIBRARY,
     ToolbarButtonType::DEBUG,     ToolbarButtonType::INFERENCE,
-    ToolbarButtonType::RESET,
+    ToolbarButtonType::RESET,     ToolbarButtonType::DOWNLOAD,
 };
 
 class ToolbarButton {

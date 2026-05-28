@@ -2,6 +2,7 @@
 #include "ir/node.h"
 #include "raylib.h"
 #include "ui/config.h"
+#include <string>
 #include <vector>
 
 namespace ui {
@@ -18,7 +19,16 @@ struct InputFieldState {
 struct ShapePopupState {
     ir::Node* target = nullptr;
     int pending_rank = 1;
-    int pending_dims[3] = {1, 1, 1};
+    int pending_dims[4] = {1, 1, 1, 1};
+    bool pending_is_initializer = false;
+    bool active = false;
+};
+
+struct AttrPopupState {
+    ir::Node* target = nullptr;
+    std::vector<std::string> names;
+    std::vector<std::string> buffers;
+    int active_field = -1;
     bool active = false;
 };
 

@@ -37,6 +37,7 @@ public:
 
   std::unique_ptr<InputFieldState> input_state;
   ShapePopupState shape_popup;
+  AttrPopupState attr_popup;
   ConnectionState connection_state;
   bool dragging = false;
   Vector2 drag_offset = {};
@@ -73,6 +74,8 @@ public:
 
   bool popup_active() const;
   void open_shape_popup(Block *block);
+  void open_attr_popup(Block *block);
+  void draw_attr_popup();
 
   Block *find_block_for_node(ir::Node *node) const;
 
