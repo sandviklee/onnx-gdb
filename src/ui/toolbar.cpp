@@ -24,6 +24,9 @@ ToolbarButton::ToolbarButton(ToolbarButtonType type, float size,
   case ToolbarButtonType::RESET:
     icon_id = ICON_REDO;
     break;
+  case ToolbarButtonType::DOWNLOAD:
+    icon_id = ICON_ARROW_DOWN_FILL;
+    break;
   }
   rect = {position.x, position.y, size, size};
 }
