@@ -86,20 +86,18 @@ Please read the official ONNX-MLIR documentation for installation instructions, 
 
 <https://onnx.ai/onnx-mlir/BuildOnLinuxOSX.html>
 
-````bash
-
 ### Build and Run
 
 Build with CMAKE:
 
 ```bash
 cd blockly-onnx
-cmake -B build -DCMAKE_POLICY_VERSION_MINIMUM=3.5 # This is because the ONNX SDK needs to be installed
+cmake -B build -DCMAKE_POLICY_VERSION_MINIMUM=3.5
 # If you want to specify ONNX-MLIR backend (be sure to change main.cpp and mlir src accordingly):
-cmake -B build -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DENABLE_ONNXMLIR_BACKEND=ON -DONNX_MLIR_SRC="..."
+cmake -B build -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DENABLE_ONNXMLIR_BACKEND=ON -DONNX_MLIR_SRC="path-to-onnx-mlir-source"
 cmake --build build
 
-````
+```
 
 Execute:
 
