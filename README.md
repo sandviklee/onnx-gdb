@@ -1,5 +1,7 @@
 # ONNX Graphical DeBugger
 
+### Abstract
+
 ML (Machine Learning) has a high barrier to entry, not just because the
 topic is complex, but because you end up navigating a mess of different
 frameworks and tools. Since most of these also require programming
@@ -12,15 +14,25 @@ makes it harder to focus on increasing efficiency, which is why with onnx-gdb, w
 creating an efficient GUI based ML compiler, built with the ONNX (Open
 Neural Network Exchange) instruction set and model. This makes a novel approach for creating ONNX models with Visual Programming bundled with both **debug** and **editing** features.
 
+### Overview
+
+ONNX-GDB is an all in one visual ONNX environment, with the goal of simplifying construction, modification, inference and debugging of ONNX models. It tries to contribute to fixing the fragmentation that plagues the Machine Learning ecosystem. ONNX-GDB is still under development, and most of the features are still in early stages. This means that there WILL be bugs.
+
+Due to the hexagonal structure of the project, ONNX-GDB supports two multiple execution backends. The ONNX Runtime (ORT) and ONNX-MLIR. This is to make it more accessible to users less comfortable with setting up execution environments. This is especially prevalent for ONNX-MLIR, which requires more complex setup.
+
+To change between execution backends, simply compile with the correct flags, and make sure to update the main.cpp and mlir src files accordingly.
+
 ### Requirements
 
-To run this project, you will need to have the following installed:
+To run this project, you will need to have the following dependencies installed:
 
 - CMAKE 3.15 or higher
 - Clang or GCC
+- Raylib SDK
 - ONNX SDK
 - ONNX Runtime SDK
-- Raylib SDK
+- LLVM Source (For ONNX-MLIR backend, optional)
+- ONNX-MLIR (For ONNX_MLIR backend, optional)
 
 ### Installation
 
@@ -68,6 +80,14 @@ Be sure to remove the already existing import.
 The ONNX & Raylib SDK is set to be installed with CMake_Lists, this is because it includes all the dependencies needed.
 Less hassle...
 
+#### ONNX-MLIR
+
+Please read the official ONNX-MLIR documentation for installation instructions, as it is a bit more complex than the other dependencies.
+
+<https://onnx.ai/onnx-mlir/BuildOnLinuxOSX.html>
+
+````bash
+
 ### Build and Run
 
 Build with CMAKE:
@@ -75,8 +95,11 @@ Build with CMAKE:
 ```bash
 cd blockly-onnx
 cmake -B build -DCMAKE_POLICY_VERSION_MINIMUM=3.5 # This is because the ONNX SDK needs to be installed
+# If you want to specify ONNX-MLIR backend (be sure to change main.cpp and mlir src accordingly):
+cmake -B build -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DENABLE_ONNXMLIR_BACKEND=ON -DONNX_MLIR_SRC="..."
 cmake --build build
-```
+
+````
 
 Execute:
 
