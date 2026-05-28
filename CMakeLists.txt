@@ -7,6 +7,15 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(LINUX_ONNX_RUNTIME_LIB_DIR "onnxruntime-linux-x64-1.24.4")
 
+option(ENABLE_ONNXMLIR_BACKEND "Build the ONNX-MLIR backend" OFF)
+if(NOT ONNXMLIR_ROOTDIR)
+  if(APPLE)
+    set(ONNXMLIR_ROOTDIR "~/onnx_mlir/")
+  else()
+    set(ONNXMLIR_ROOTDIR "/usr/local")
+  endif()
+endif()
+
 if(WIN32)
   add_compile_options(/W4)
   add_compile_definitions(NOMINMAX)
@@ -66,6 +75,7 @@ add_library(ir
     src/ir/graph.cpp
 )
 target_include_directories(ir PUBLIC include)
+target_link_libraries(ir PUBLIC onnx)
 
 add_library(backend src/backend/backend.cpp)
 if(APPLE)
@@ -94,12 +104,47 @@ target_link_libraries(gdbui PUBLIC raylib ir)
 target_sources(gdbui PRIVATE ${CMAKE_BINARY_DIR}/raygui_impl.c)
 target_include_directories(gdbui PRIVATE ${raygui_SOURCE_DIR}/src)
 
+if(ENABLE_ONNXMLIR_BACKEND)
+  if(NOT ONNX_MLIR_SRC)
+    if(DEFINED ENV{ONNX_MLIR_SRC})
+      set(ONNX_MLIR_SRC "$ENV{ONNX_MLIR_SRC}")
+    else()
+      set(ONNX_MLIR_SRC "/Users/sandviklee/onnx-mlir")
+    endif()
+  endif()
+  set(ONNX_MLIR_LIB_DIR "${ONNX_MLIR_SRC}/build/Release/lib")
+  set(ONNX_MLIR_INC_DIR "${ONNX_MLIR_SRC}/include")
+  set(ONNX_MLIR_BIN "${ONNX_MLIR_SRC}/build/Release/bin/onnx-mlir")
+  if(NOT EXISTS "${ONNX_MLIR_LIB_DIR}/libcruntime.a")
+    message(FATAL_ERROR "libcruntime.a not found at ${ONNX_MLIR_LIB_DIR}; "
+            "set -DONNX_MLIR_SRC=/path/to/onnx-mlir")
+  endif()
+  if(NOT EXISTS "${ONNX_MLIR_BIN}")
+    message(FATAL_ERROR "onnx-mlir CLI not found at ${ONNX_MLIR_BIN}; "
+            "set -DONNX_MLIR_SRC=/path/to/onnx-mlir")
+  endif()
+  message(STATUS "Using ONNX_MLIR_SRC=${ONNX_MLIR_SRC}")
+
+  add_library(onnxmlir_backend src/backend/onnxmlir_backend.cpp)
+  target_include_directories(onnxmlir_backend PUBLIC include "${ONNX_MLIR_INC_DIR}")
+  target_link_libraries(onnxmlir_backend PUBLIC
+    onnx ir "${ONNX_MLIR_LIB_DIR}/libcruntime.a" ${CMAKE_DL_LIBS})
+  target_compile_definitions(onnxmlir_backend PRIVATE
+    ROMLL_ONNXMLIR_BIN="${ONNX_MLIR_BIN}")
+  target_compile_options(onnxmlir_backend PRIVATE -Wall -Wextra)
+endif()
+
 add_executable(${PROJECT_NAME} src/main.cpp src/ui/filedlg.cpp)
 target_link_directories(${PROJECT_NAME} PRIVATE
   "${ONNXRUNTIME_ROOTDIR}/lib"
 )
 target_include_directories(${PROJECT_NAME} PRIVATE include)
 target_link_libraries(${PROJECT_NAME} PRIVATE onnxruntime backend gdbui)
+
+if(ENABLE_ONNXMLIR_BACKEND)
+  target_link_libraries(${PROJECT_NAME} PRIVATE onnxmlir_backend)
+  target_compile_definitions(${PROJECT_NAME} PRIVATE ROMLL_ONNXMLIR_AVAILABLE)
+endif()
 
 if(APPLE)
   set(CMAKE_OSX_DEPLOYMENT_TARGET "16.0" CACHE STRING "" FORCE)
