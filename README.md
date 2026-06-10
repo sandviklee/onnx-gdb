@@ -34,6 +34,8 @@ To run this project, you will need to have the following dependencies installed:
 - LLVM Source (For ONNX-MLIR backend, optional)
 - ONNX-MLIR (For ONNX_MLIR backend, optional)
 
+Please, use either Linux or macOS for running this project. As Windows has not been tested, and may require some adjustments to the code and CMake_Lists.txt.
+
 ### Installation
 
 As stated in the Requirements section, we need the ONNX SDK and ONNX Runtime:
@@ -60,7 +62,7 @@ As for Linux type operating systems, you can just install the binary directly fr
 
 ##### Another approach
 
-it is also possible to configure so it is downloaded with CMAKE, but since I already had it installed as a binary, I used that instead.
+It is also possible to configure so it is downloaded with CMAKE, but since I already had it installed as a binary, I used that instead.
 
 To use CMAKE to install the runtime, paste this into the CMake_Lists.txt:
 
@@ -73,6 +75,7 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(onnxruntime)
 ```
 
+...
 Be sure to remove the already existing import.
 
 #### ONNX & Raylib SDK
@@ -91,7 +94,7 @@ Please read the official ONNX-MLIR documentation for installation instructions, 
 Build with CMAKE:
 
 ```bash
-cd blockly-onnx
+cd onnx-gdb
 cmake -B build -DCMAKE_POLICY_VERSION_MINIMUM=3.5
 # If you want to specify ONNX-MLIR backend (be sure to change main.cpp and mlir src accordingly):
 cmake -B build -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DENABLE_ONNXMLIR_BACKEND=ON -DONNX_MLIR_SRC="path-to-onnx-mlir-source"
@@ -103,5 +106,19 @@ Execute:
 
 ```bash
 cd build
-./blockly-onnx
+./onnx-gdb
 ```
+
+### Scripts, Inputs and Models
+
+As described in the thesis, all models have been added into the ./models/ directory. These include the tinymlperf models provided by the thesis supervisors as well as the edited ones from the application (during modification evaluation). The premade directory includes all models that have been used, like simple, chain, cnn (from the figure in the construction section), as well as the 10, 50, 250, 500 operator models (these models need to be added through source code to immediately load at startup).
+
+For ONNX model generation, we have ./scripts/instrumentation/onnx_simple_generator.py which generates the Simple model used in evaluation. We also include ./scripts/instrumentation/onnx_generator.py which generated all of the aforementioned scaling models.
+
+When evaluating construction and modification specification conformance, we utilized ./scripts/instrumentation/onnx_checker.py.
+
+To check for correctness during inference, we utilized ./scripts/instrumentation/ort_checker.py which includes all the experiments conducted during inference (with their respective inputs).
+
+Checking correctness for the debugger, we utilized Polygraphy, which we have stored its inputs and (existing) outputs in ./results/polygraphy/\* .
+
+For the quantitative evaluation between ONNX-GDB and BlocklyONNX, we used the ./scripts/metrics/\* scripts, as well as modifying the source code directly to fit each criteria. Therefore these experiments are harder to reproduce. BlocklyONNX is also not open source, so it is not available to validate.
