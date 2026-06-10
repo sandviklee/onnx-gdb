@@ -1,0 +1,52 @@
+{
+    "lst": [
+        [
+            "onnxrt-runner-N0-06/03/26-21:10:25",
+            [
+                {
+                    "outputs": {
+                        "matmul_out": {
+                            "values": {
+                                "array": "k05VTVBZAQB2AHsnZGVzY3InOiAnPGY0JywgJ2ZvcnRyYW5fb3JkZXInOiBGYWxzZSwgJ3NoYXBlJzogKDEsIDIpLCB9ICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIAoAAKBAAAAgQA==",
+                                "polygraphy_class": "ndarray"
+                            },
+                            "polygraphy_class": "LazyArray"
+                        },
+                        "add_out": {
+                            "values": {
+                                "array": "k05VTVBZAQB2AHsnZGVzY3InOiAnPGY0JywgJ2ZvcnRyYW5fb3JkZXInOiBGYWxzZSwgJ3NoYXBlJzogKDEsIDIpLCB9ICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIAozM6NAmpkZQA==",
+                                "polygraphy_class": "ndarray"
+                            },
+                            "polygraphy_class": "LazyArray"
+                        },
+                        "relu_out": {
+                            "values": {
+                                "array": "k05VTVBZAQB2AHsnZGVzY3InOiAnPGY0JywgJ2ZvcnRyYW5fb3JkZXInOiBGYWxzZSwgJ3NoYXBlJzogKDEsIDIpLCB9ICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIAozM6NAmpkZQA==",
+                                "polygraphy_class": "ndarray"
+                            },
+                            "polygraphy_class": "LazyArray"
+                        },
+                        "matmul2_out": {
+                            "values": {
+                                "array": "k05VTVBZAQB2AHsnZGVzY3InOiAnPGY0JywgJ2ZvcnRyYW5fb3JkZXInOiBGYWxzZSwgJ3NoYXBlJzogKDEsIDEpLCB9ICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIAoAAPBA",
+                                "polygraphy_class": "ndarray"
+                            },
+                            "polygraphy_class": "LazyArray"
+                        },
+                        "output": {
+                            "values": {
+                                "array": "k05VTVBZAQB2AHsnZGVzY3InOiAnPGY0JywgJ2ZvcnRyYW5fb3JkZXInOiBGYWxzZSwgJ3NoYXBlJzogKDEsIDEpLCB9ICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIArG238/",
+                                "polygraphy_class": "ndarray"
+                            },
+                            "polygraphy_class": "LazyArray"
+                        }
+                    },
+                    "runtime": 0.001024007797241211,
+                    "runner_name": "onnxrt-runner-N0-06/03/26-21:10:25",
+                    "polygraphy_class": "IterationResult"
+                }
+            ]
+        ]
+    ],
+    "polygraphy_class": "RunResults"
+}

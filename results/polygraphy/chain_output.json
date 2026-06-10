@@ -1,0 +1,38 @@
+{
+  "lst": [
+    [
+      "onnxrt-runner-N0-06/03/26-21:05:51",
+      [
+        {
+          "outputs": {
+            "MatMul": {
+              "values": {
+                "array": "k05VTVBZAQB2AHsnZGVzY3InOiAnPGY0JywgJ2ZvcnRyYW5fb3JkZXInOiBGYWxzZSwgJ3NoYXBlJzogKCksIH0gICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIAoAANhB",
+                "polygraphy_class": "ndarray"
+              },
+              "polygraphy_class": "LazyArray"
+            },
+            "Add": {
+              "values": {
+                "array": "k05VTVBZAQB2AHsnZGVzY3InOiAnPGY0JywgJ2ZvcnRyYW5fb3JkZXInOiBGYWxzZSwgJ3NoYXBlJzogKDEsKSwgfSAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIAoAAOhB",
+                "polygraphy_class": "ndarray"
+              },
+              "polygraphy_class": "LazyArray"
+            },
+            "PortOutput": {
+              "values": {
+                "array": "k05VTVBZAQB2AHsnZGVzY3InOiAnPGY0JywgJ2ZvcnRyYW5fb3JkZXInOiBGYWxzZSwgJ3NoYXBlJzogKDEsKSwgfSAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIAoAAOhA",
+                "polygraphy_class": "ndarray"
+              },
+              "polygraphy_class": "LazyArray"
+            }
+          },
+          "runtime": 0.001814126968383789,
+          "runner_name": "onnxrt-runner-N0-06/03/26-21:05:51",
+          "polygraphy_class": "IterationResult"
+        }
+      ]
+    ]
+  ],
+  "polygraphy_class": "RunResults"
+}
