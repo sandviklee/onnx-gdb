@@ -53,7 +53,7 @@ public:
   };
   std::vector<WireTooltip> wire_tooltips;
 
-  explicit UIGraph(size_t initial_shape);
+  UIGraph();
 
   Block *add_block(const std::string &op_name, const Vector2 &position);
   void remove_block(Block *block);

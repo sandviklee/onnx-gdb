@@ -53,36 +53,7 @@ static std::string format_debug_values(const std::vector<float> &vals) {
   return s;
 }
 
-UIGraph::UIGraph(size_t initial_shape)
-    : input_state(std::make_unique<InputFieldState>()) {
-  auto *input_node =
-      new ir::Node("PortInput", ir_graph.generate_node_label("PortInput"));
-  input_node->shape_dims = {(int)initial_shape};
-  input_node->values.assign(initial_shape, 0.0f);
-  input_node->layout_hint = {200.0f, 200.0f};
-
-  auto *output_node =
-      new ir::Node("PortOutput", ir_graph.generate_node_label("PortOutput"));
-  output_node->layout_hint = {800.0f, 200.0f};
-
-  auto *relu_node = new ir::Node("Relu", ir_graph.generate_node_label("Relu"));
-  relu_node->layout_hint = {450.0f, 400.0f};
-
-  ir_graph.add_node(input_node);
-  ir_graph.add_node(output_node);
-  ir_graph.add_node(relu_node);
-
-  ir_graph.connect(input_node, relu_node, 0, 0);
-  ir_graph.connect(relu_node, output_node, 0, 0);
-
-  for (const auto &node_ptr : ir_graph.nodes) {
-    ir::Node *node = node_ptr.get();
-    Vector2 pos = {node->layout_hint.x, node->layout_hint.y};
-    auto block = std::make_unique<Block>(node, pos);
-    register_block(block.get());
-    blocks.push_back(std::move(block));
-  }
-}
+UIGraph::UIGraph() : input_state(std::make_unique<InputFieldState>()) {}
 
 void UIGraph::register_block(Block *block) {
   node_to_block[block->node] = block;
@@ -318,16 +289,15 @@ void UIGraph::draw_attr_popup() {
     DrawText(attr_popup.names[i].c_str(), px + 14, row_y + 6, 13, LIGHTGRAY);
     Rectangle field = {px + 14 + label_w, row_y, pw - 28 - label_w, 24.0f};
     bool focused = attr_popup.active_field == (int)i;
-    DrawRectangleRec(field, focused ? Color{55, 55, 70, 255}
-                                    : Color{50, 50, 58, 255});
+    DrawRectangleRec(field,
+                     focused ? Color{55, 55, 70, 255} : Color{50, 50, 58, 255});
     DrawRectangleLinesEx(field, 1.0f,
                          focused ? Color{120, 160, 220, 255}
                                  : Color{80, 80, 90, 255});
     DrawText(attr_popup.buffers[i].c_str(), field.x + 6, field.y + 4, 13,
              WHITE);
     if (focused && ((int)(GetTime() * 2)) % 2 == 0) {
-      int cur_x = field.x + 6 +
-                  MeasureText(attr_popup.buffers[i].c_str(), 13);
+      int cur_x = field.x + 6 + MeasureText(attr_popup.buffers[i].c_str(), 13);
       DrawLine(cur_x, field.y + 4, cur_x, field.y + field.height - 4, RED);
     }
     if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) &&
@@ -346,8 +316,8 @@ void UIGraph::draw_attr_popup() {
   DrawRectangleRec(cancel_r, cancel_hov ? Color{110, 55, 55, 255}
                                         : Color{80, 40, 40, 255});
   DrawRectangleLinesEx(cancel_r, 1.0f, {120, 60, 60, 255});
-  DrawText("Cancel", cancel_r.x + (bw - MeasureText("Cancel", 14)) / 2,
-           by + 9, 14, WHITE);
+  DrawText("Cancel", cancel_r.x + (bw - MeasureText("Cancel", 14)) / 2, by + 9,
+           14, WHITE);
   DrawRectangleRec(ok_r,
                    ok_hov ? Color{55, 110, 55, 255} : Color{40, 80, 40, 255});
   DrawRectangleLinesEx(ok_r, 1.0f, {60, 120, 60, 255});

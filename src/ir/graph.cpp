@@ -495,7 +495,7 @@ void Graph::build_from_onnx(const onnx::ModelProto &model,
 }
 
 const std::string &Graph::current_onnx_bytes() {
-  if (cache_stale || onnx_bytes_cache.empty()) {
+  if ((cache_stale || onnx_bytes_cache.empty()) && !nodes.empty()) {
     onnx::ModelProto model = to_onnx_model();
     onnx_bytes_cache.clear();
     (void)model.SerializeToString(&onnx_bytes_cache);
@@ -513,9 +513,10 @@ struct MiniModel {
   std::vector<Node *> input_sources;
 };
 
-static void declare_input_with_shape(
-    onnx::ValueInfoProto *ip, const std::string &name,
-    const std::unordered_map<Node *, TensorData> *computed, Node *producer) {
+static void
+declare_input_with_shape(onnx::ValueInfoProto *ip, const std::string &name,
+                         const std::unordered_map<Node *, TensorData> *computed,
+                         Node *producer) {
   ip->set_name(name);
   auto *tt = ip->mutable_type()->mutable_tensor_type();
   tt->set_elem_type(onnx::TensorProto_DataType_FLOAT);
@@ -531,9 +532,9 @@ static void declare_input_with_shape(
   shape->add_dim()->set_dim_value(1);
 }
 
-static MiniModel build_node_mini_model(
-    const Node *node, const onnx::ModelProto *source,
-    const std::unordered_map<Node *, TensorData> *computed) {
+static MiniModel
+build_node_mini_model(const Node *node, const onnx::ModelProto *source,
+                      const std::unordered_map<Node *, TensorData> *computed) {
   MiniModel out;
   onnx::ModelProto mini;
   auto *opset = mini.add_opset_import();
@@ -594,10 +595,9 @@ static MiniModel build_node_mini_model(
     }
   } else {
     std::vector<Edge> ordered(node->inputs.begin(), node->inputs.end());
-    std::sort(ordered.begin(), ordered.end(),
-              [](const Edge &a, const Edge &b) {
-                return a.port_index < b.port_index;
-              });
+    std::sort(ordered.begin(), ordered.end(), [](const Edge &a, const Edge &b) {
+      return a.port_index < b.port_index;
+    });
     for (size_t i = 0; i < ordered.size(); i++) {
       std::string iname = "i" + std::to_string(i);
       mnode->add_input(iname);

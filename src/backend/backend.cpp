@@ -8,9 +8,7 @@ OrtBackend::OrtBackend(ir::Graph &ir_graph,
     : ir_graph(ir_graph), notify(std::move(notify)),
       onnx_model(ir_graph.current_onnx_bytes()), env(),
       memory_info(
-          Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault)),
-      session(Ort::Session(env, onnx_model.data(), onnx_model.size(),
-                           Ort::SessionOptions{nullptr})) {
+          Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault)) {
   for (auto *root : ir_graph.roots) {
     if (root->is_initializer)
       continue;

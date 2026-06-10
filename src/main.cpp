@@ -15,10 +15,10 @@
 
 // ---- Backend selection ----
 // Remember  -DENABLE_ONNXMLIR_BACKEND=ON if OnnxMlirBAckend is desired.
-// #include "backend/backend.h"
-// using ActiveBackend = backend::OrtBackend;
-#include "backend/onnxmlir_backend.h"
-using ActiveBackend = backend::OnnxMlirBackend;
+#include "backend/backend.h"
+using ActiveBackend = backend::OrtBackend;
+// #include "backend/onnxmlir_backend.h"
+// using ActiveBackend = backend::OnnxMlirBackend;
 // ---------------------------
 
 static void do_library_action(ui::UIGraph &ui_graph, ui::Toolbar &toolbar,
@@ -31,6 +31,19 @@ static void do_library_action(ui::UIGraph &ui_graph, ui::Toolbar &toolbar,
   toolbar.show_library = false;
 }
 
+static void load_onnx(std::string path, ui::UIGraph &ui_graph) {
+  std::string msg;
+  if (ui_graph.ir_graph.load_onnx_file(path, msg)) {
+    ui_graph.rebuild_from_ir();
+    if (msg.empty())
+      ui_graph.push_notification("Model loaded successfully", false);
+    else
+      ui_graph.push_notification("Loaded (warnings): " + msg, false);
+  } else {
+    ui_graph.push_notification("Import failed: " + msg, true);
+  }
+}
+
 static void do_toolbar_action(ActiveBackend &backend, ui::UIGraph &ui_graph,
                               ui::Toolbar &toolbar, int action) {
   if (action == -1)
@@ -39,16 +52,7 @@ static void do_toolbar_action(ActiveBackend &backend, ui::UIGraph &ui_graph,
   case ui::ToolbarButtonType::OPEN_FILE: {
     std::string path = open_onnx_file_dialog();
     if (!path.empty()) {
-      std::string msg;
-      if (ui_graph.ir_graph.load_onnx_file(path, msg)) {
-        ui_graph.rebuild_from_ir();
-        if (msg.empty())
-          ui_graph.push_notification("Model loaded successfully", false);
-        else
-          ui_graph.push_notification("Loaded (warnings): " + msg, false);
-      } else {
-        ui_graph.push_notification("Import failed: " + msg, true);
-      }
+      load_onnx(path, ui_graph);
     }
     toolbar.show_library = false;
     break;
@@ -115,12 +119,13 @@ int main() {
   };
 
   InitWindow(config.window_width, config.window_height, "ROMLL");
-  SetTargetFPS(60);
+  SetTargetFPS(0);
+  SetConfigFlags(0);
 
   Camera2D camera = {};
   camera.zoom = 1.0f;
 
-  ui::UIGraph ui_graph(4);
+  ui::UIGraph ui_graph;
   ActiveBackend backend(ui_graph.ir_graph,
                         [&ui_graph](const std::string &msg, bool is_error) {
                           ui_graph.push_notification(msg, is_error);
@@ -133,7 +138,12 @@ int main() {
                        float(config.window_height - offset_y)},
                       TOOLBAR_BUTTON_SIZE);
 
+  // load_onnx("../../models/premade/500.onnx", ui_graph);
+  // const int frame_count = 1000;
+  // int total_ms = 0;
   while (!WindowShouldClose()) {
+    // for (int i = 0; i < frame_count; i++) {
+    auto t0 = std::chrono::steady_clock::now();
     ui_graph.update(camera);
 
     if (!ui_graph.popup_active()) {
@@ -167,6 +177,8 @@ int main() {
         }
       }
     }
+    // camera.target.x += 4.0f;
+    // camera.zoom += sinf(GetTime()) * 0.001f;
 
     BeginDrawing();
     ClearBackground(RAYWHITE);
@@ -190,7 +202,13 @@ int main() {
     DrawCircleV(GetMousePosition(), 3, DARKGRAY);
 
     EndDrawing();
+    // auto t1 = std::chrono::steady_clock::now();
+    // total_ms += std::chrono::duration<double, std::milli>(t1 - t0).count();
+    // return 0;
   }
+
+  // printf("avg frame time: %.6f ms\n", total_ms / frame_count);
+  // printf("avg FPS: %.2f\n", 1000.0 * frame_count / total_ms);
 
   CloseWindow();
   return 0;
