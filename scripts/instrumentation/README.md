@@ -8,6 +8,8 @@ In this subdirectory you will find:
 
 - onnx_simple_genertor.py: Used to generate the Python SDK model used in inference and debugging evaluation. When ran, it will store itself in the correct model directory.
 
+- onnx_generator.py: Used to generate all scaling models used in construction and modification evaluation. When ran, it will store itself in the correct model directory.
+
 ### Installation Requirements
 
 To run these scripts, you must have Python installed. These were ran with Python 3.14. You must also have all the required dependencies.
